@@ -4,6 +4,12 @@ A native macOS desktop WidgetKit widget for five T3 Code subscription accounts: 
 
 Displays remaining session/weekly/model quota, subscription plan, reset countdowns, and Codex reset-credit count and next expiry when provided by T3. Expired timestamps show pending update; the widget never assumes that quotas have reset. Source timestamps and stale-data labels distinguish cached data from current provider data.
 
+## Preview
+
+![T3 quota widget preview with synthetic accounts, subscription plans and reset credits](docs/widget-preview.svg)
+
+Illustrative preview with synthetic accounts and quotas; not a screenshot of live account data.
+
 ## Build and install
 
 Requires an Apple Silicon Mac, macOS 14 or newer, Xcode and Python 3. Built locally with ad-hoc signing; no Apple developer identity is required for this tested local installation.
@@ -31,3 +37,7 @@ python3 -m unittest discover -s tests
 ## Remove
 
 Unload `tw.skyhong.t3usage` with launchctl, remove its plist from `~/Library/LaunchAgents`, and move the app to Trash. Remove desktop widgets through Edit Widgets. Local quota data can then be removed from `/Users/Shared/T3QuotaWidget`.
+
+## License
+
+[MIT License](LICENSE).
