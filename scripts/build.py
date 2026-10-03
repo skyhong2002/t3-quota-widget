@@ -11,7 +11,7 @@ def run(*args):
 run('swiftc', '-target', 'arm64-apple-macos14.0', '-parse-as-library', '-application-extension', str(root/'Sources/Widget.swift'), '-o', str(ext/'Contents/MacOS/T3Widget'), '-framework', 'WidgetKit', '-framework', 'SwiftUI', '-Xlinker', '-e', '-Xlinker', '_NSExtensionMain')
 run('swiftc', str(root/'Sources/Host.swift'), '-o', str(app/'Contents/MacOS/T3Host'), '-framework', 'WidgetKit', '-framework', 'AppKit')
 shutil.copy2(root/'scripts/reader.py', app/'Contents/Resources/reader.py')
-base = dict(CFBundleVersion='5', CFBundleShortVersionString='1.2', LSMinimumSystemVersion='14.0', CFBundleSupportedPlatforms=['MacOSX'], DTPlatformName='macosx', DTSDKName='macosx27.0')
+base = dict(CFBundleVersion='6', CFBundleShortVersionString='1.2.1', LSMinimumSystemVersion='14.0', CFBundleSupportedPlatforms=['MacOSX'], DTPlatformName='macosx', DTSDKName='macosx27.0')
 (app/'Contents/Info.plist').write_bytes(plistlib.dumps(dict(base, CFBundlePackageType='APPL', CFBundleIdentifier='tw.skyhong.t3usage', CFBundleExecutable='T3Host', CFBundleName='T3 帳號額度 Widget', LSUIElement=True)))
 (ext/'Contents/Info.plist').write_bytes(plistlib.dumps(dict(base, CFBundlePackageType='XPC!', CFBundleIdentifier='tw.skyhong.t3usage.widget', CFBundleExecutable='T3Widget', CFBundleName='T3 五帳號額度', NSExtension={'NSExtensionPointIdentifier':'com.apple.widgetkit-extension'})))
 def sign(bundle, ent):

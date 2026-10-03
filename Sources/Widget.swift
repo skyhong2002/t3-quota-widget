@@ -82,37 +82,17 @@ struct T3QuotaWidget: Widget {
     }
 }
 
-import AppIntents
-struct AccountEntity: AppEntity {
-    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "T3 帳號")
-    static var defaultQuery = AccountQuery()
-    let id: String
-    let label: String
-    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(label)") }
-}
-struct AccountQuery: EntityQuery {
-    func entities(for identifiers: [String]) async throws -> [AccountEntity] {
-        try await suggestedEntities().filter { identifiers.contains($0.id) }
-    }
-    func suggestedEntities() async throws -> [AccountEntity] {
-        Provider().read().accounts.map { AccountEntity(id: $0.id, label: ($0.provider == "claude" ? "Claude · " : "Codex · ") + $0.label) }
-    }
-}
-struct AccountIntent: WidgetConfigurationIntent {
-    static var title: LocalizedStringResource = "選擇帳號"
-    @Parameter(title: "帳號") var account: AccountEntity?
-    init() {}
-}
 struct SingleEntry: TimelineEntry { let date: Date; let account: Account? }
-struct SingleProvider: AppIntentTimelineProvider {
-    func placeholder(in context: Context) -> SingleEntry { SingleEntry(date: Date(), account: nil) }
-    func snapshot(for configuration: AccountIntent, in context: Context) async -> SingleEntry { read(configuration) }
-    func timeline(for configuration: AccountIntent, in context: Context) async -> Timeline<SingleEntry> {
-        Timeline(entries: [read(configuration)], policy: .after(Date().addingTimeInterval(300)))
+struct FixedProvider: TimelineProvider {
+    let index: Int
+    func placeholder(in context: Context) -> SingleEntry { read() }
+    func getSnapshot(in context: Context, completion: @escaping (SingleEntry) -> Void) { completion(read()) }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<SingleEntry>) -> Void) {
+        completion(Timeline(entries: [read()], policy: .after(Date().addingTimeInterval(300))))
     }
-    func read(_ configuration: AccountIntent) -> SingleEntry {
+    func read() -> SingleEntry {
         let snapshot = Provider().read()
-        return SingleEntry(date: snapshot.date, account: snapshot.accounts.first { $0.id == configuration.account?.id })
+        return SingleEntry(date: snapshot.date, account: snapshot.accounts.indices.contains(index) ? snapshot.accounts[index] : nil)
     }
 }
 struct SingleTile: View {
@@ -157,20 +137,31 @@ struct SingleTile: View {
                     }
                 } else { Text("T3 尚無此帳號的額度資料").font(.caption).foregroundStyle(.secondary) }
             } else {
-                Text("選擇一個 T3 帳號").font(.headline)
-                Text("在這張小工具上按右鍵 → 編輯小工具 → 帳號。").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text("等待 T3 帳號資料").font(.headline)
+                Text("請確認 T3 帳號設定與背景同步。").font(.system(size: 13)).foregroundStyle(.secondary)
             }
         }.containerBackground(.background, for: .widget)
     }
 }
-struct T3SingleWidget: Widget {
+struct FixedAccountWidget: Widget {
+    let index: Int
+    let name: String
+    init() { self.index = 0; self.name = "Claude 1" }
+    init(index: Int, name: String) { self.index = index; self.name = name }
     var body: some WidgetConfiguration {
-        AppIntentConfiguration(kind: "T3SingleAccount", intent: AccountIntent.self, provider: SingleProvider()) { SingleTile(entry: $0) }
-            .configurationDisplayName("T3 單一帳號")
-            .description("一張小工具顯示一個訂閱帳號，使用較大的文字。")
+        StaticConfiguration(kind: "T3Account" + String(index), provider: FixedProvider(index: index)) { SingleTile(entry: $0) }
+            .configurationDisplayName(name)
+            .description("此帳號的訂閱方案、額度與重置狀態。帳號身分由 T3 設定取得。")
             .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
 @main struct T3WidgetBundle: WidgetBundle {
-    var body: some Widget { T3SingleWidget(); T3QuotaWidget() }
+    var body: some Widget {
+        FixedAccountWidget(index: 0, name: "Claude 1 · 第一個帳號")
+        FixedAccountWidget(index: 1, name: "Claude 2 · 第二個帳號")
+        FixedAccountWidget(index: 2, name: "Claude 3 · 第三個帳號")
+        FixedAccountWidget(index: 3, name: "Codex 1 · 第一個帳號")
+        FixedAccountWidget(index: 4, name: "Codex 2 · 第二個帳號")
+        T3QuotaWidget()
+    }
 }

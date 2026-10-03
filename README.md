@@ -6,7 +6,7 @@ Displays remaining session/weekly/model quota, subscription plan, reset countdow
 
 ## Individual account widgets
 
-Version 1.2 adds **T3 單一帳號**, with medium and large sizes. Add one widget per subscription, then right-click → Edit Widget → Account. Provider and account identity stay bound together. The original five-account overview remains available.
+Version 1.2.1 provides five fixed-account widgets: Claude 1/2/3 and Codex 1/2. Choose the account tile directly in the widget gallery; no edit menu or App Intents metadata is required. Both medium and large sizes are supported. Mapping follows the source IDs listed below, not quota ranking. The old configurable single-account kind was removed; replace those loading tiles with the new fixed-account tiles. The original overview remains available.
 
 ## Preview
 
