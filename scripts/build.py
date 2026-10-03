@@ -22,6 +22,12 @@ if '--install' in sys.argv:
     subprocess.run(['launchctl','bootout',f'gui/{uid}/tw.skyhong.t3usage'],capture_output=True)
     subprocess.run(['pkill','-TERM','-x','T3Host'],capture_output=True)
     dest = pathlib.Path('/Applications') / app.name
+    # Stop the old extension and unregister both copies before changing versions.
+    subprocess.run(['pkill','-TERM','-x','T3Widget'],capture_output=True)
+    lsregister = '/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister'
+    for bundle in (app, dest):
+        subprocess.run(['pluginkit','-r',str(bundle/'Contents/PlugIns/T3Widget.appex')],capture_output=True)
+        subprocess.run([lsregister,'-u',str(bundle)],capture_output=True)
     if dest.exists(): shutil.rmtree(dest)
     shutil.copytree(app,dest)
     shared = pathlib.Path('/Users/Shared/T3QuotaWidget'); shared.mkdir(exist_ok=True); shared.chmod(0o700)

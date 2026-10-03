@@ -4,3 +4,5 @@ __pycache__/
 *.pyc
 accounts.json
 .DS_Store
+
+widget-diagnostic.txt
