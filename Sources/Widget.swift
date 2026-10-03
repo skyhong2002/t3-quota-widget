@@ -32,22 +32,22 @@ struct Tile: View {
         return "\(minutes / 60)時\(minutes % 60)分"
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack { Text("T3 帳號額度").font(.system(size: 13, weight: .bold)); Spacer(); Text("剩餘 / 重置").font(.system(size: 9)).foregroundStyle(.secondary) }
+        VStack(alignment: .leading, spacing: 2) {
+            HStack { Text("T3 帳號額度").font(.system(size: 13, weight: .bold)); Spacer(); Text("剩餘 / 重置").font(.system(size: 8)).foregroundStyle(.secondary) }
             if entry.accounts.isEmpty { Spacer(); Text("請開啟 T3 帳號額度，等待資料同步。").font(.caption); Spacer() }
             ForEach(entry.accounts) { account in
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
                         Text(account.provider == "claude" ? "Claude" : "Codex").foregroundStyle(account.provider == "claude" ? Color.orange : Color.cyan)
                         Text(account.label).lineLimit(1).minimumScaleFactor(0.75)
-                    }.font(.system(size: 10, weight: .semibold))
+                    }.font(.system(size: 9, weight: .semibold))
                     HStack(spacing: 4) {
                         Text((account.plan ?? "方案未提供").replacingOccurrences(of: " Subscription", with: "")).lineLimit(1).minimumScaleFactor(0.7)
                         Spacer(minLength: 0)
                         if let credits = account.resetCredits {
-                            Text("重置券 \(credits.availableCount) · 到期 \(reset(credits.nextExpiresAt))")
+                            Text("重置券 \(credits.availableCount) · 到期 \(reset(credits.nextExpiresAt))").lineLimit(1).minimumScaleFactor(0.65)
                         }
-                    }.font(.system(size: 8)).foregroundStyle(.secondary)
+                    }.font(.system(size: 7)).foregroundStyle(.secondary)
                     if let usage = account.usage {
                         ForEach(Array(usage.usageRows.enumerated()), id: \.offset) { _, row in
                             HStack(spacing: 5) {
@@ -59,16 +59,16 @@ struct Tile: View {
                                     }
                                 }.frame(height: 4)
                                 Text("\(Int(row.percentLeft))%").monospacedDigit().frame(width: 28, alignment: .trailing)
-                                Text(reset(row.window.resetsAt)).foregroundStyle(.secondary).frame(width: 52, alignment: .trailing)
-                            }.font(.system(size: 9))
+                                Text(reset(row.window.resetsAt)).lineLimit(1).minimumScaleFactor(0.65).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                            }.font(.system(size: 8))
                         }
-                    } else { Text("T3 尚無額度資料").font(.system(size: 9)).foregroundStyle(.secondary) }
+                    } else { Text("T3 尚無額度資料").font(.system(size: 8)).foregroundStyle(.secondary) }
                 }
                 if account.id != entry.accounts.last?.id { Divider() }
             }
             Spacer(minLength: 0)
             if let raw = entry.accounts.compactMap({ $0.usage?.updatedAt }).min(), let checked = ISO8601DateFormatter().date(from: raw) {
-                HStack(spacing: 2) { Text("T3 資料："); Text(checked, style: .relative); if entry.date.timeIntervalSince(checked) > 900 { Text("· 未更新").foregroundStyle(.orange) } }.font(.system(size: 8)).foregroundStyle(.secondary)
+                HStack(spacing: 2) { Text("T3 資料："); Text(checked, style: .relative); if entry.date.timeIntervalSince(checked) > 900 { Text("· 未更新").foregroundStyle(.orange) } }.font(.system(size: 7)).foregroundStyle(.secondary)
             }
         }.containerBackground(.background, for: .widget)
     }
