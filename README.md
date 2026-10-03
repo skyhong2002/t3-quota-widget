@@ -4,6 +4,10 @@ A native macOS desktop WidgetKit widget for five T3 Code subscription accounts: 
 
 Displays remaining session/weekly/model quota, subscription plan, reset countdowns, and Codex reset-credit count and next expiry when provided by T3. Expired timestamps show pending update; the widget never assumes that quotas have reset. Source timestamps and stale-data labels distinguish cached data from current provider data.
 
+## Individual account widgets
+
+Version 1.2 adds **T3 單一帳號**, with medium and large sizes. Add one widget per subscription, then right-click → Edit Widget → Account. Provider and account identity stay bound together. The original five-account overview remains available.
+
 ## Preview
 
 ![T3 quota widget preview with synthetic accounts, subscription plans and reset credits](docs/widget-preview.svg)

@@ -73,11 +73,104 @@ struct Tile: View {
         }.containerBackground(.background, for: .widget)
     }
 }
-@main struct T3QuotaWidget: Widget {
+struct T3QuotaWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "T3FiveAccounts", provider: Provider()) { Tile(entry: $0) }
             .configurationDisplayName("T3 五帳號額度")
             .description("同時顯示三個 Claude 與兩個 Codex 帳號的剩餘額度及重置時間。")
             .supportedFamilies([.systemLarge])
     }
+}
+
+import AppIntents
+struct AccountEntity: AppEntity {
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "T3 帳號")
+    static var defaultQuery = AccountQuery()
+    let id: String
+    let label: String
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(label)") }
+}
+struct AccountQuery: EntityQuery {
+    func entities(for identifiers: [String]) async throws -> [AccountEntity] {
+        try await suggestedEntities().filter { identifiers.contains($0.id) }
+    }
+    func suggestedEntities() async throws -> [AccountEntity] {
+        Provider().read().accounts.map { AccountEntity(id: $0.id, label: ($0.provider == "claude" ? "Claude · " : "Codex · ") + $0.label) }
+    }
+}
+struct AccountIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "選擇帳號"
+    @Parameter(title: "帳號") var account: AccountEntity?
+    init() {}
+}
+struct SingleEntry: TimelineEntry { let date: Date; let account: Account? }
+struct SingleProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> SingleEntry { SingleEntry(date: Date(), account: nil) }
+    func snapshot(for configuration: AccountIntent, in context: Context) async -> SingleEntry { read(configuration) }
+    func timeline(for configuration: AccountIntent, in context: Context) async -> Timeline<SingleEntry> {
+        Timeline(entries: [read(configuration)], policy: .after(Date().addingTimeInterval(300)))
+    }
+    func read(_ configuration: AccountIntent) -> SingleEntry {
+        let snapshot = Provider().read()
+        return SingleEntry(date: snapshot.date, account: snapshot.accounts.first { $0.id == configuration.account?.id })
+    }
+}
+struct SingleTile: View {
+    let entry: SingleEntry
+    @Environment(\.widgetFamily) var family
+    var body: some View {
+        VStack(alignment: .leading, spacing: family == .systemLarge ? 16 : 4) {
+            if let account = entry.account {
+                let color: Color = account.provider == "claude" ? .orange : .cyan
+                HStack(alignment: .firstTextBaseline) {
+                    Text(account.provider == "claude" ? "Claude" : "Codex").font(.system(size: family == .systemLarge ? 20 : 18, weight: .bold)).foregroundStyle(color)
+                    Spacer()
+                    Text((account.plan ?? "方案未提供").replacingOccurrences(of: " Subscription", with: "")).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Text(account.label).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                if let usage = account.usage {
+                    ForEach(Array(usage.usageRows.enumerated()), id: \.offset) { _, row in
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text(row.title.replacingOccurrences(of: "Weekly · ", with: "")).font(.system(size: 12, weight: .medium))
+                                Spacer()
+                                Text("\(Int(row.percentLeft))% 剩餘").font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                                Text(Tile(entry: Entry(date: entry.date, accounts: [])).reset(row.window.resetsAt)).font(.system(size: 11)).foregroundStyle(.secondary)
+                            }
+                            GeometryReader { g in
+                                ZStack(alignment: .leading) {
+                                    Capsule().fill(Color.primary.opacity(0.10))
+                                    Capsule().fill(row.percentLeft < 15 ? .red : color).frame(width: g.size.width * row.percentLeft / 100)
+                                }
+                            }.frame(height: 6)
+                        }
+                    }
+                    if family == .systemLarge { Spacer(minLength: 0) }
+                    HStack(spacing: 3) {
+                        if let credits = account.resetCredits {
+                            Text("重置券 \(credits.availableCount) 張").fontWeight(.medium)
+                            Text("· 到期 \(Tile(entry: Entry(date: entry.date, accounts: [])).reset(credits.nextExpiresAt))")
+                        }
+                    }.font(.system(size: 12)).foregroundStyle(.secondary)
+                    if family == .systemLarge, let raw = usage.usageRows.first?.window.resetsAt, let reset = ISO8601DateFormatter().date(from: raw) {
+                        HStack { Text("下次重置"); Text(reset, format: .dateTime.month().day().hour().minute()) }.font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                } else { Text("T3 尚無此帳號的額度資料").font(.caption).foregroundStyle(.secondary) }
+            } else {
+                Text("選擇一個 T3 帳號").font(.headline)
+                Text("在這張小工具上按右鍵 → 編輯小工具 → 帳號。").font(.system(size: 13)).foregroundStyle(.secondary)
+            }
+        }.containerBackground(.background, for: .widget)
+    }
+}
+struct T3SingleWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "T3SingleAccount", intent: AccountIntent.self, provider: SingleProvider()) { SingleTile(entry: $0) }
+            .configurationDisplayName("T3 單一帳號")
+            .description("一張小工具顯示一個訂閱帳號，使用較大的文字。")
+            .supportedFamilies([.systemMedium, .systemLarge])
+    }
+}
+@main struct T3WidgetBundle: WidgetBundle {
+    var body: some Widget { T3SingleWidget(); T3QuotaWidget() }
 }

@@ -21,7 +21,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try payload.write(to: root.appendingPathComponent("accounts.json"), options: .atomic)
             previous = payload
-            WidgetCenter.shared.reloadTimelines(ofKind: "T3FiveAccounts")
+            WidgetCenter.shared.reloadAllTimelines()
             print("Updated five-account widget"); fflush(stdout)
         } catch { print(error); fflush(stdout) }
     }
