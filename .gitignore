@@ -1,0 +1,6 @@
+build/
+*.app/
+__pycache__/
+*.pyc
+accounts.json
+.DS_Store
