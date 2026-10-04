@@ -14,6 +14,9 @@ ROOT = Path.home()
 CACHE = ROOT / '.t3/caches'
 SETTINGS = ROOT / '.t3/userdata/settings.json'
 SOURCES = ('claude-nycu', 'claudeAgent', 'claude-cs14', 'codex-nycu', 'codex')
+COMPUTAI = ROOT / '.local/bin/computai'
+SPEND_CACHE = ROOT / 'Library/Application Support/T3UsageDesktop/spend.json'
+SPEND_EVERY = 300
 
 
 def iso(value):
@@ -66,6 +69,53 @@ def account(source, settings):
     return result
 
 
+def claude_homes(settings):
+    """Every Claude home T3 knows about, including proxy accounts, so ComputAI counts all of them."""
+    homes = []
+    for config in settings.get('providerInstances', {}).values():
+        home = config.get('config', {}).get('homePath')
+        if config.get('driver') == 'claudeAgent' and home and Path(home, 'projects').is_dir() and home not in homes:
+            homes.append(home)
+    return homes
+
+
+def computai(settings, *args):
+    env = dict(os.environ, COMPUTAI_NO_UPDATE_CHECK='1')
+    homes = claude_homes(settings)
+    if homes:
+        env['CLAUDE_CONFIG_DIR'] = ','.join(homes)
+    out = subprocess.run([str(COMPUTAI), *args, '--json'], env=env, capture_output=True, timeout=180, check=True)
+    return json.loads(out.stdout)
+
+
+def spend(settings, now=None):
+    """API-equivalent spend from ComputAI, refreshed every SPEND_EVERY seconds. None when ComputAI is absent."""
+    now = time.time() if now is None else now
+    try:
+        cached = json.loads(SPEND_CACHE.read_text())
+    except (OSError, ValueError):
+        cached = None
+    if cached and now - cached.get('checkedEpoch', 0) < SPEND_EVERY:
+        return cached['spend']
+    if not COMPUTAI.exists():
+        return None
+    try:
+        month = computai(settings, '--summary', '--month')
+        today = computai(settings, '--line')
+        result = {'todayUSD': round(float(today['today_usd']), 2),
+                  'monthUSD': round(float(month['total_cost_usd']), 2),
+                  'devices': max(1, len(month.get('devices', []))),
+                  'unpricedModels': len(month.get('unpriced_models', [])),
+                  'updatedAt': dt.datetime.fromtimestamp(now, dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        return cached['spend'] if cached else None
+    SPEND_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile('w', dir=SPEND_CACHE.parent, delete=False) as tmp:
+        json.dump({'checkedEpoch': now, 'spend': result}, tmp)
+    os.replace(tmp.name, SPEND_CACHE)
+    return result
+
+
 def build_snapshot(settings):
     accounts = []
     for source in SOURCES:
@@ -76,7 +126,7 @@ def build_snapshot(settings):
             expected = config.get('displayName', source)
             provider = 'codex' if source.startswith('codex') else 'claude'
             accounts.append({'id': provider + '/t3:' + hashlib.sha256((source + ':' + expected.strip().lower()).encode()).hexdigest(), 'provider': provider, 'label': expected})
-    return {'accounts': accounts, 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
+    return {'accounts': accounts, 'spend': spend(settings), 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
 
 
 if __name__ == '__main__':

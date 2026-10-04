@@ -7,8 +7,9 @@ struct Reset: Codable { var resetsAt: String? }
 struct Usage: Codable { var updatedAt: String; var usageRows: [Quota] }
 struct Credits: Codable { var availableCount: Int; var nextExpiresAt: String? }
 struct Account: Codable, Identifiable { var id: String; var provider: String; var label: String; var plan: String?; var resetCredits: Credits?; var usage: Usage? }
-struct Snapshot: Codable { var accounts: [Account] }
-struct Entry: TimelineEntry { let date: Date; let accounts: [Account] }
+struct Spend: Codable { var todayUSD: Double; var monthUSD: Double; var devices: Int; var unpricedModels: Int; var updatedAt: String }
+struct Snapshot: Codable { var accounts: [Account]; var spend: Spend? }
+struct Entry: TimelineEntry { let date: Date; let accounts: [Account]; var spend: Spend? = nil }
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry { Entry(date: Date(), accounts: []) }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) { completion(read()) }
@@ -19,7 +20,7 @@ struct Provider: TimelineProvider {
         let root = Optional(URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true))
         guard let root, let data = try? Data(contentsOf: root.appendingPathComponent("accounts.json")),
               let value = try? JSONDecoder().decode(Snapshot.self, from: data) else { return Entry(date: Date(), accounts: []) }
-        return Entry(date: Date(), accounts: value.accounts)
+        return Entry(date: Date(), accounts: value.accounts, spend: value.spend)
     }
 }
 struct Tile: View {
@@ -67,6 +68,17 @@ struct Tile: View {
                 if account.id != entry.accounts.last?.id { Divider() }
             }
             Spacer(minLength: 0)
+            if let spend = entry.spend {
+                let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD").precision(.fractionLength(0))
+                HStack(spacing: 4) {
+                    Text("API 等值").foregroundStyle(.secondary)
+                    Text("今日 \(spend.todayUSD.formatted(usd))").fontWeight(.semibold)
+                    Text("本月 \(spend.monthUSD.formatted(usd))").fontWeight(.semibold)
+                    if spend.unpricedModels > 0 { Text("+ 未計價").foregroundStyle(.orange) }
+                    Spacer(minLength: 0)
+                    if spend.devices > 1 { Text("\(spend.devices) 台").foregroundStyle(.secondary) }
+                }.font(.system(size: 8)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+            }
             if let raw = entry.accounts.compactMap({ $0.usage?.updatedAt }).min(), let checked = ISO8601DateFormatter().date(from: raw) {
                 HStack(spacing: 2) { Text("T3 資料："); Text(checked, style: .relative); if entry.date.timeIntervalSince(checked) > 900 { Text("· 未更新").foregroundStyle(.orange) } }.font(.system(size: 7)).foregroundStyle(.secondary)
             }

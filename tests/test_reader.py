@@ -13,3 +13,20 @@ class ReaderTest(unittest.TestCase):
                 cache['auth']['email']='wrong@example.test';path.write_text(json.dumps(cache));a=r.account('codex',config)
                 for key in ('usage','plan','resetCredits'): self.assertNotIn(key,a)
             finally: r.CACHE=old
+    def test_spend_from_computai_is_cached_and_survives_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); old = (r.COMPUTAI, r.SPEND_CACHE)
+            fake = root/'computai'
+            fake.write_text('#!/bin/sh\nprintf "%s" "$CLAUDE_CONFIG_DIR" > "$(dirname "$0")/homes"\ncase "$1" in --line) echo \'{"today_usd": 12.345}\';; *) echo \'{"total_cost_usd": 400.5, "devices": [{}, {}], "unpriced_models": ["x"]}\';; esac\n')
+            fake.chmod(0o755); (root/'claude-a/projects').mkdir(parents=True)
+            r.COMPUTAI, r.SPEND_CACHE = fake, root/'spend.json'
+            try:
+                settings = {'providerInstances': {'a': {'driver': 'claudeAgent', 'config': {'homePath': str(root/'claude-a')}},
+                                                  'b': {'driver': 'claudeAgent', 'config': {'homePath': str(root/'missing')}}}}
+                s = r.spend(settings, now=1000)
+                self.assertEqual((s['todayUSD'], s['monthUSD'], s['devices'], s['unpricedModels']), (12.35, 400.5, 2, 1))
+                self.assertEqual((root/'homes').read_text(), str(root/'claude-a'))
+                fake.write_text('#!/bin/sh\nexit 1\n')
+                self.assertEqual(r.spend(settings, now=1100)['monthUSD'], 400.5)
+                self.assertEqual(r.spend(settings, now=2000)['monthUSD'], 400.5)
+            finally: r.COMPUTAI, r.SPEND_CACHE = old
