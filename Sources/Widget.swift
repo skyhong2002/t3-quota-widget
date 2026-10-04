@@ -20,8 +20,37 @@ struct AccountPace: Codable {
     struct Window: Codable { var title: String; var percentLeft: Double; var elapsedPercent: Double; var resetsIn: Double; var runsOutIn: Double? }
     var provider: String; var name: String; var plan: String; var updatedAt: String; var worst: Int; var windows: [Window]
 }
-struct Snapshot: Codable { var accounts: [Account]; var pace: [AccountPace]?; var spend: Spend?; var computai: Ledger? }
-struct Entry: TimelineEntry { let date: Date; let accounts: [Account]; var pace: [AccountPace] = []; var spend: Spend? = nil; var ledger: Ledger? = nil }
+struct Snapshot: Codable { var accounts: [Account]; var pace: [AccountPace]?; var spend: Spend?; var computai: Ledger?; var language: String? }
+
+/// Picks the Traditional Chinese or English string. The host publishes the language (default zh).
+struct Words {
+    let english: Bool
+    func callAsFunction(_ zh: String, _ en: String) -> String { english ? en : zh }
+    func span(_ seconds: Double) -> String {
+        let minutes = max(0, Int(seconds / 60))
+        if minutes >= 1440 { return english ? "\(minutes / 1440)d \(minutes % 1440 / 60)h" : "\(minutes / 1440)天\(minutes % 1440 / 60)時" }
+        if minutes >= 60 { return english ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes / 60)時\(minutes % 60)分" }
+        return english ? "\(minutes)m" : "\(minutes)分"
+    }
+    /// T3 window titles: Session, Weekly, Weekly · Fable.
+    func window(_ title: String) -> String {
+        let parts = title.components(separatedBy: " · ")
+        let base = parts[0] == "Session" ? self("5 小時", "5-hour") : parts[0] == "Weekly" ? self("每週", "Weekly") : parts[0]
+        guard parts.count > 1 else { return base }
+        return english ? "\(parts[1]) \(base.lowercased())" : "\(parts[1]) \(base)"
+    }
+    func until(_ raw: String?, from date: Date) -> String {
+        guard let raw, let reset = ISO8601DateFormatter().date(from: raw) else { return self("未提供", "n/a") }
+        if reset.timeIntervalSince(date) < 60 { return self("已到期·待更新", "due · updating") }
+        return span(reset.timeIntervalSince(date))
+    }
+    func plan(_ plan: String?) -> String { (plan ?? self("方案未提供", "Plan unknown")).replacingOccurrences(of: " Subscription", with: "") }
+}
+
+struct Entry: TimelineEntry {
+    let date: Date; let accounts: [Account]; var pace: [AccountPace] = []; var spend: Spend? = nil; var ledger: Ledger? = nil; var language = "zh"
+    var t: Words { Words(english: language == "en") }
+}
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry { Entry(date: Date(), accounts: []) }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) { completion(read()) }
@@ -32,75 +61,89 @@ struct Provider: TimelineProvider {
         let root = Optional(URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true))
         guard let root, let data = try? Data(contentsOf: root.appendingPathComponent("accounts.json")),
               let value = try? JSONDecoder().decode(Snapshot.self, from: data) else { return Entry(date: Date(), accounts: []) }
-        return Entry(date: Date(), accounts: value.accounts, pace: value.pace ?? [], spend: value.spend, ledger: value.computai)
+        return Entry(date: Date(), accounts: value.accounts, pace: value.pace ?? [], spend: value.spend, ledger: value.computai, language: value.language ?? "zh")
     }
 }
 func dollars(_ value: Double) -> String { "$" + value.formatted(.number.precision(.fractionLength(0))) }
-func shortDollars(_ value: Double) -> String { value >= 10_000 ? "$" + (value / 1000).formatted(.number.precision(.fractionLength(1))) + "k" : dollars(value) }
-func span(_ seconds: Double) -> String {
-    let minutes = max(0, Int(seconds / 60))
-    if minutes >= 1440 { return "\(minutes / 1440)天\(minutes % 1440 / 60)時" }
-    if minutes >= 60 { return "\(minutes / 60)時\(minutes % 60)分" }
-    return "\(minutes)分"
-}
 func providerColor(_ provider: String) -> Color { provider == "claude" ? .orange : .cyan }
+func providerName(_ provider: String) -> String { provider == "claude" ? "Claude" : "Codex" }
+func isStale(_ raw: String?, at date: Date) -> Bool {
+    guard let raw, let checked = ISO8601DateFormatter().date(from: raw) else { return true }
+    return date.timeIntervalSince(checked) > 900
+}
+
+/// Title, where the data comes from, and a summary on the right that turns into a stale warning.
+struct WidgetHeader: View {
+    let title: String
+    let source: String
+    var trailing: String = ""
+    var trailingColor: Color = .secondary
+    var updatedAt: String?
+    let date: Date
+    let t: Words
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(title).font(.system(size: 14, weight: .bold)).layoutPriority(1)
+            if !source.isEmpty { Text(source).font(.system(size: 10)).foregroundStyle(.secondary) }
+            Spacer(minLength: 4)
+            if updatedAt != nil && isStale(updatedAt, at: date) {
+                Text(t("資料未更新", "Data is stale")).foregroundStyle(.orange)
+            } else {
+                Text(trailing).foregroundStyle(trailingColor)
+            }
+        }.font(.system(size: 10)).lineLimit(1)
+    }
+}
+
 struct Tile: View {
     let entry: Entry
-    func reset(_ raw: String?) -> String {
-        guard let raw, let date = ISO8601DateFormatter().date(from: raw) else { return "未提供" }
-        let minutes = max(0, Int(date.timeIntervalSince(entry.date) / 60))
-        if minutes == 0 { return "已到期·待更新" }
-        if minutes >= 1440 { return "\(minutes / 1440)天\(minutes % 1440 / 60)時" }
-        return "\(minutes / 60)時\(minutes % 60)分"
-    }
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack { Text("T3 帳號額度").font(.system(size: 13, weight: .bold)); Spacer(); Text("剩餘 / 重置").font(.system(size: 8)).foregroundStyle(.secondary) }
-            if entry.accounts.isEmpty { Spacer(); Text("請開啟 T3 帳號額度，等待資料同步。").font(.caption); Spacer() }
+        let t = entry.t
+        let checked = entry.accounts.compactMap { $0.usage?.updatedAt }.min()
+        VStack(alignment: .leading, spacing: 3) {
+            WidgetHeader(title: t("帳號額度", "Account Quotas"), source: "T3 Code", trailing: t("剩餘 / 重置", "Left / resets in"), updatedAt: checked, date: entry.date, t: t)
+            if entry.accounts.isEmpty { Spacer(); Text(t("請開啟 T3 帳號額度，等待資料同步。", "Open the T3 quota app and wait for the first sync.")).font(.caption); Spacer() }
             ForEach(entry.accounts) { account in
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text(account.provider == "claude" ? "Claude" : "Codex").foregroundStyle(account.provider == "claude" ? Color.orange : Color.cyan)
+                        Text(providerName(account.provider)).foregroundStyle(providerColor(account.provider))
                         Text(account.label).lineLimit(1).minimumScaleFactor(0.75)
-                    }.font(.system(size: 9, weight: .semibold))
-                    HStack(spacing: 4) {
-                        Text((account.plan ?? "方案未提供").replacingOccurrences(of: " Subscription", with: "")).lineLimit(1).minimumScaleFactor(0.7)
-                        Spacer(minLength: 0)
-                        if let credits = account.resetCredits {
-                            Text("重置券 \(credits.availableCount) · 到期 \(reset(credits.nextExpiresAt))").lineLimit(1).minimumScaleFactor(0.65)
-                        }
-                    }.font(.system(size: 7)).foregroundStyle(.secondary)
+                        Spacer(minLength: 4)
+                        Text(t.plan(account.plan)).font(.system(size: 10, weight: .regular)).foregroundStyle(.secondary).lineLimit(1)
+                    }.font(.system(size: 11, weight: .semibold))
+                    if let credits = account.resetCredits {
+                        Text(t("重置券 \(credits.availableCount) · 到期 \(t.until(credits.nextExpiresAt, from: entry.date))",
+                               "\(credits.availableCount) reset credit\(credits.availableCount == 1 ? "" : "s") · expire in \(t.until(credits.nextExpiresAt, from: entry.date))"))
+                            .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    }
                     if let usage = account.usage {
                         ForEach(Array(usage.usageRows.enumerated()), id: \.offset) { _, row in
                             HStack(spacing: 5) {
-                                Text(row.title.replacingOccurrences(of: "Weekly · ", with: "")).frame(width: 48, alignment: .leading).lineLimit(1)
+                                Text(t.window(row.title)).frame(width: 70, alignment: .leading).lineLimit(1)
                                 GeometryReader { g in
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(Color.primary.opacity(0.10))
-                                        Capsule().fill(row.percentLeft < 15 ? Color.red : (account.provider == "claude" ? Color.orange : Color.cyan)).frame(width: max(0, g.size.width * row.percentLeft / 100))
+                                        Capsule().fill(row.percentLeft < 15 ? Color.red : providerColor(account.provider)).frame(width: max(0, g.size.width * row.percentLeft / 100))
                                     }
                                 }.frame(height: 4)
-                                Text("\(Int(row.percentLeft))%").monospacedDigit().frame(width: 28, alignment: .trailing)
-                                Text(reset(row.window.resetsAt)).lineLimit(1).minimumScaleFactor(0.65).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
-                            }.font(.system(size: 8))
+                                Text("\(Int(row.percentLeft))%").monospacedDigit().frame(width: 30, alignment: .trailing)
+                                Text(t.until(row.window.resetsAt, from: entry.date)).lineLimit(1).foregroundStyle(.secondary).frame(width: 64, alignment: .trailing)
+                            }.font(.system(size: 10))
                         }
-                    } else { Text("T3 尚無額度資料").font(.system(size: 8)).foregroundStyle(.secondary) }
+                    } else { Text(t("T3 尚無額度資料", "No quota from T3 yet")).font(.system(size: 9)).foregroundStyle(.secondary) }
                 }
                 if account.id != entry.accounts.last?.id { Divider() }
             }
             Spacer(minLength: 0)
             if let spend = entry.spend {
                 HStack(spacing: 4) {
-                    Text("API 等值").foregroundStyle(.secondary)
-                    Text("今日 \(dollars(spend.todayUSD))").fontWeight(.semibold)
-                    Text("本月 \(dollars(spend.monthUSD))").fontWeight(.semibold)
-                    if spend.unpricedModels > 0 { Text("+ 未計價").foregroundStyle(.orange) }
+                    Text("ComputAI").foregroundStyle(.secondary)
+                    Text(t("今日 \(dollars(spend.todayUSD))", "Today \(dollars(spend.todayUSD))")).fontWeight(.semibold)
+                    Text(t("本月 \(dollars(spend.monthUSD))", "Month \(dollars(spend.monthUSD))")).fontWeight(.semibold)
+                    if spend.unpricedModels > 0 { Text(t("+ 未計價", "+ unpriced")).foregroundStyle(.orange) }
                     Spacer(minLength: 0)
-                    if spend.devices > 1 { Text("\(spend.devices) 台").foregroundStyle(.secondary) }
-                }.font(.system(size: 8)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-            }
-            if let raw = entry.accounts.compactMap({ $0.usage?.updatedAt }).min(), let checked = ISO8601DateFormatter().date(from: raw) {
-                HStack(spacing: 2) { Text("T3 資料："); Text(checked, style: .relative); if entry.date.timeIntervalSince(checked) > 900 { Text("· 未更新").foregroundStyle(.orange) } }.font(.system(size: 7)).foregroundStyle(.secondary)
+                    if spend.devices > 1 { Text(t("\(spend.devices) 台", "\(spend.devices) computers")).foregroundStyle(.secondary) }
+                }.font(.system(size: 9)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
             }
         }.containerBackground(.background, for: .widget)
     }
@@ -108,13 +151,13 @@ struct Tile: View {
 struct T3QuotaWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "T3FiveAccounts", provider: Provider()) { Tile(entry: $0) }
-            .configurationDisplayName("T3 五帳號額度")
-            .description("同時顯示三個 Claude 與兩個 Codex 帳號的剩餘額度及重置時間。")
+            .configurationDisplayName("T3 五帳號額度 · Five Accounts")
+            .description("資料來源：T3 Code。三個 Claude 與兩個 Codex 帳號的剩餘額度及重置時間。")
             .supportedFamilies([.systemLarge])
     }
 }
 
-struct SingleEntry: TimelineEntry { let date: Date; let account: Account? }
+struct SingleEntry: TimelineEntry { let date: Date; let account: Account?; var language = "zh"; var t: Words { Words(english: language == "en") } }
 struct FixedProvider: TimelineProvider {
     let index: Int
     func placeholder(in context: Context) -> SingleEntry { read() }
@@ -124,30 +167,40 @@ struct FixedProvider: TimelineProvider {
     }
     func read() -> SingleEntry {
         let snapshot = Provider().read()
-        return SingleEntry(date: snapshot.date, account: snapshot.accounts.indices.contains(index) ? snapshot.accounts[index] : nil)
+        return SingleEntry(date: snapshot.date, account: snapshot.accounts.indices.contains(index) ? snapshot.accounts[index] : nil, language: snapshot.language)
     }
 }
 struct SingleTile: View {
     let entry: SingleEntry
     @Environment(\.widgetFamily) var family
     var body: some View {
-        VStack(alignment: .leading, spacing: family == .systemLarge ? 16 : 4) {
+        let t = entry.t
+        let large = family == .systemLarge
+        VStack(alignment: .leading, spacing: large ? 14 : 4) {
             if let account = entry.account {
-                let color: Color = account.provider == "claude" ? .orange : .cyan
+                let color = providerColor(account.provider)
                 HStack(alignment: .firstTextBaseline) {
-                    Text(account.provider == "claude" ? "Claude" : "Codex").font(.system(size: family == .systemLarge ? 20 : 18, weight: .bold)).foregroundStyle(color)
+                    Text(providerName(account.provider)).font(.system(size: large ? 20 : 18, weight: .bold)).foregroundStyle(color)
                     Spacer()
-                    Text((account.plan ?? "方案未提供").replacingOccurrences(of: " Subscription", with: "")).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(t.plan(account.plan)).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
                 }
-                Text(account.label).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(account.label).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Spacer()
+                    if isStale(account.usage?.updatedAt, at: entry.date) && account.usage != nil {
+                        Text(t("資料未更新", "Data is stale")).foregroundStyle(.orange)
+                    } else {
+                        Text("T3 Code").foregroundStyle(.secondary)
+                    }
+                }.font(.system(size: 10))
                 if let usage = account.usage {
                     ForEach(Array(usage.usageRows.enumerated()), id: \.offset) { _, row in
                         VStack(spacing: 4) {
                             HStack {
-                                Text(row.title.replacingOccurrences(of: "Weekly · ", with: "")).font(.system(size: 12, weight: .medium))
+                                Text(t.window(row.title)).font(.system(size: 12, weight: .medium))
                                 Spacer()
-                                Text("\(Int(row.percentLeft))% 剩餘").font(.system(size: 14, weight: .semibold)).monospacedDigit()
-                                Text(Tile(entry: Entry(date: entry.date, accounts: [])).reset(row.window.resetsAt)).font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text(t("剩 \(Int(row.percentLeft))%", "\(Int(row.percentLeft))% left")).font(.system(size: 14, weight: .semibold)).monospacedDigit()
+                                Text(t.until(row.window.resetsAt, from: entry.date)).font(.system(size: 11)).foregroundStyle(.secondary)
                             }
                             GeometryReader { g in
                                 ZStack(alignment: .leading) {
@@ -157,20 +210,19 @@ struct SingleTile: View {
                             }.frame(height: 6)
                         }
                     }
-                    if family == .systemLarge { Spacer(minLength: 0) }
-                    HStack(spacing: 3) {
-                        if let credits = account.resetCredits {
-                            Text("重置券 \(credits.availableCount) 張").fontWeight(.medium)
-                            Text("· 到期 \(Tile(entry: Entry(date: entry.date, accounts: [])).reset(credits.nextExpiresAt))")
-                        }
-                    }.font(.system(size: 12)).foregroundStyle(.secondary)
-                    if family == .systemLarge, let raw = usage.usageRows.first?.window.resetsAt, let reset = ISO8601DateFormatter().date(from: raw) {
-                        HStack { Text("下次重置"); Text(reset, format: .dateTime.month().day().hour().minute()) }.font(.system(size: 12)).foregroundStyle(.secondary)
+                    if large { Spacer(minLength: 0) }
+                    if let credits = account.resetCredits {
+                        Text(t("重置券 \(credits.availableCount) 張 · 到期 \(t.until(credits.nextExpiresAt, from: entry.date))",
+                               "\(credits.availableCount) reset credit\(credits.availableCount == 1 ? "" : "s") · expire in \(t.until(credits.nextExpiresAt, from: entry.date))"))
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
                     }
-                } else { Text("T3 尚無此帳號的額度資料").font(.caption).foregroundStyle(.secondary) }
+                    if large, let raw = usage.usageRows.first?.window.resetsAt, let reset = ISO8601DateFormatter().date(from: raw) {
+                        HStack { Text(t("下次重置", "Next reset")); Text(reset, format: .dateTime.month().day().hour().minute()) }.font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                } else { Text(t("T3 尚無此帳號的額度資料", "No quota from T3 for this account yet")).font(.caption).foregroundStyle(.secondary) }
             } else {
-                Text("等待 T3 帳號資料").font(.headline)
-                Text("請確認 T3 帳號設定與背景同步。").font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(t("等待 T3 帳號資料", "Waiting for T3 accounts")).font(.headline)
+                Text(t("請確認 T3 帳號設定與背景同步。", "Check the T3 account settings and the background sync.")).font(.system(size: 13)).foregroundStyle(.secondary)
             }
         }.containerBackground(.background, for: .widget)
     }
@@ -183,7 +235,7 @@ struct FixedAccountWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "T3Account" + String(index), provider: FixedProvider(index: index)) { SingleTile(entry: $0) }
             .configurationDisplayName(name)
-            .description("此帳號的訂閱方案、額度與重置狀態。帳號身分由 T3 設定取得。")
+            .description("資料來源：T3 Code。此帳號的訂閱方案、額度與重置狀態。")
             .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
@@ -191,50 +243,49 @@ struct SpendTile: View {
     let entry: Entry
     @Environment(\.widgetFamily) var family
     var body: some View {
+        let t = entry.t
+        let small = family == .systemSmall
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("AI 花費").font(.system(size: 13, weight: .bold))
-                Spacer()
-                Text("API 等值").font(.system(size: 9)).foregroundStyle(.secondary)
-            }
+            WidgetHeader(title: t("AI 花費", "AI Spend"), source: small ? "" : "ComputAI", trailing: small ? "" : t("照 API 價格", "at API prices"),
+                         updatedAt: entry.spend?.updatedAt, date: entry.date, t: t)
             if let spend = entry.spend {
                 Spacer(minLength: 0)
                 HStack(alignment: .lastTextBaseline, spacing: 16) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("本月").font(.system(size: 10)).foregroundStyle(.secondary)
-                        Text(dollars(spend.monthUSD)).font(.system(size: 30, weight: .bold)).minimumScaleFactor(0.6)
+                        Text(t("本月", "This month")).font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(dollars(spend.monthUSD)).font(.system(size: 32, weight: .bold)).minimumScaleFactor(0.6)
                     }
-                    if family != .systemSmall {
+                    if !small {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("今日").font(.system(size: 10)).foregroundStyle(.secondary)
-                            Text(dollars(spend.todayUSD)).font(.system(size: 20, weight: .semibold))
+                            Text(t("今日", "Today")).font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(dollars(spend.todayUSD)).font(.system(size: 22, weight: .semibold))
                         }
                         if let yesterday = entry.ledger?.yesterdayUSD {
                             VStack(alignment: .leading, spacing: 0) {
-                                Text("昨日").font(.system(size: 10)).foregroundStyle(.secondary)
-                                Text(dollars(yesterday)).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary)
+                                Text(t("昨日", "Yesterday")).font(.system(size: 11)).foregroundStyle(.secondary)
+                                Text(dollars(yesterday)).font(.system(size: 22, weight: .semibold)).foregroundStyle(.secondary)
                             }
                         }
                     }
                 }.monospacedDigit().lineLimit(1)
-                if family == .systemSmall {
-                    Text("今日 \(dollars(spend.todayUSD))").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                if small {
+                    Text(t("今日 \(dollars(spend.todayUSD))", "Today \(dollars(spend.todayUSD))")).font(.system(size: 14, weight: .semibold)).monospacedDigit()
                 }
                 Spacer(minLength: 0)
                 HStack(spacing: 3) {
-                    if spend.devices > 1 { Text("\(spend.devices) 台電腦 ·") }
-                    if let checked = ISO8601DateFormatter().date(from: spend.updatedAt) {
-                        if entry.date.timeIntervalSince(checked) > 900 { Text("未更新").foregroundStyle(.orange) } else { Text("\(checked.formatted(date: .omitted, time: .shortened)) 更新") }
+                    let time = ISO8601DateFormatter().date(from: spend.updatedAt)?.formatted(date: .omitted, time: .shortened) ?? ""
+                    if small {
+                        Text("ComputAI · \(time)")
+                    } else {
+                        if spend.devices > 1 { Text(t("\(spend.devices) 台電腦 ·", "\(spend.devices) computers ·")) }
+                        Text(t("\(time) 更新", "updated \(time)"))
                     }
-                }.font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                }.font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
                 if spend.unpricedModels > 0 {
-                    Text("另有 \(spend.unpricedModels) 個模型未計價").font(.system(size: 9)).foregroundStyle(.orange).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(t("另有 \(spend.unpricedModels) 個模型未計價", "\(spend.unpricedModels) models have no price")).font(.system(size: 10)).foregroundStyle(.orange).lineLimit(1).minimumScaleFactor(0.8)
                 }
             } else {
-                Spacer(minLength: 0)
-                Text("等待 ComputAI 資料").font(.system(size: 12, weight: .medium))
-                Text("需要安裝 computai").font(.system(size: 10)).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
+                NoLedger(t: t)
             }
         }.containerBackground(.background, for: .widget)
     }
@@ -242,8 +293,8 @@ struct SpendTile: View {
 struct SpendWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "T3Spend", provider: Provider()) { SpendTile(entry: $0) }
-            .configurationDisplayName("AI 花費")
-            .description("本月與今日的 Claude、Codex 用量，以 API 價格換算，涵蓋 ComputAI 讀得到的每台電腦。")
+            .configurationDisplayName("AI 花費 · AI Spend")
+            .description("資料來源：ComputAI。本月、今日與昨日的 Claude、Codex 用量，以 API 價格換算，涵蓋每台電腦。")
             .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

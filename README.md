@@ -48,6 +48,18 @@ When the ComputAI dashboard is running (`computai --web`, on 127.0.0.1:8765), th
 
 Only machine and device names, totals and limit percentages are published; project names and the session timeline are dropped. Without the dashboard, AI 花費 falls back to running ComputAI directly, at most every 5 minutes; the result is cached in `~/Library/Application Support/T3UsageDesktop/spend.json` and the last good value is kept when a run fails. Every Claude home configured in T3 (including proxy accounts) is passed to it, so all accounts on this Mac are counted. Other machines come from ComputAI's own `[machines]` settings, for example `usage = pull` over SSH.
 
+## Data sources and language
+
+Every widget names its data source next to its title: **T3 Code** for quotas and pace, **ComputAI** for spend and machines. When the data is more than 15 minutes old, the summary on the right turns into an orange stale warning. The gallery names are bilingual and each description starts with the source.
+
+Widgets are in Traditional Chinese by default. Switch to English, or follow the macOS language, with:
+
+```sh
+defaults write tw.skyhong.t3usage language en     # or zh, or auto
+```
+
+The background app picks it up on its next sync (within 30 seconds); WidgetKit decides when the desktop redraws.
+
 ## Validation
 
 ```sh

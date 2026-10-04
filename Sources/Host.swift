@@ -16,6 +16,9 @@ final class Delegate: NSObject, NSApplicationDelegate {
             try p.run(); let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
             guard p.terminationStatus == 0, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let accounts = object["accounts"] else { return }
             var published: [String: Any] = ["accounts": accounts]
+            // `defaults write tw.skyhong.t3usage language en` (or auto, to follow macOS); Traditional Chinese by default.
+            let language = UserDefaults.standard.string(forKey: "language") ?? "zh"
+            published["language"] = language == "auto" ? (Locale.preferredLanguages.first?.hasPrefix("zh") == true ? "zh" : "en") : (language == "en" ? "en" : "zh")
             for key in ["pace", "spend", "computai"] {
                 if let value = object[key], !(value is NSNull) { published[key] = value }
             }

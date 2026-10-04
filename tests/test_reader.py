@@ -58,8 +58,8 @@ class ReaderTest(unittest.TestCase):
         a = p[0]
         self.assertEqual((a['name'], a['plan']), ('me', 'Claude Max'))
         session, fable, spent, fresh = a['windows']
-        self.assertEqual((session['title'], session['runsOutIn']), ('5 小時', 6000))   # 50% in 100 min -> 100 more min, reset in 200
-        self.assertEqual((fable['title'], fable['runsOutIn']), ('Fable 每週', None))
+        self.assertEqual((session['title'], session['runsOutIn']), ('Session', 6000))   # 50% in 100 min -> 100 more min, reset in 200
+        self.assertEqual((fable['title'], fable['runsOutIn']), ('Weekly · Fable', None))
         self.assertEqual((spent['runsOutIn'], spent['percentLeft']), (0, 0))
         self.assertIsNone(fresh['runsOutIn'])                                        # too early in the window to project
         self.assertEqual(a['worst'], 2)

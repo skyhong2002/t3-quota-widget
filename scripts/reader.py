@@ -19,7 +19,6 @@ COMPUTAI = ROOT / '.local/bin/computai'
 SPEND_CACHE = ROOT / 'Library/Application Support/T3UsageDesktop/spend.json'
 SPEND_EVERY = 300
 STATE_URL = 'http://127.0.0.1:8765/api/state'
-WINDOWS = {'Session': '5 小時', 'Weekly': '每週'}
 
 
 def iso(value):
@@ -163,12 +162,6 @@ def ledger(state):
             'unpricedModels': len(state.get('unpriced_models') or [])}
 
 
-def window_title(title):
-    """Session -> 5 小時, Weekly -> 每週, Weekly · Fable -> Fable 每週."""
-    window, _, model = title.partition(' · ')
-    return ((model + ' ') if model else '') + WINDOWS.get(window, window)
-
-
 def pace(accounts, now=None):
     """How fast every T3 account burns each window, as a straight line from the window start.
     runsOutIn is set only when the window would run out before it resets (0 when it already has)."""
@@ -193,7 +186,7 @@ def pace(accounts, now=None):
             elif used > 0 and elapsed >= length * 0.05:   # too early in the window to project
                 eta = (100 - used) * elapsed / used
                 runs_out = round(eta) if eta < resets_in else None
-            windows.append({'title': window_title(row['title']), 'percentLeft': max(0, 100 - used),
+            windows.append({'title': row['title'], 'percentLeft': max(0, 100 - used),
                             'elapsedPercent': round(100 * elapsed / length, 1), 'resetsIn': round(resets_in), 'runsOutIn': runs_out})
         if windows:
             worst = min(range(len(windows)), key=lambda i: (windows[i]['runsOutIn'] is None, windows[i]['runsOutIn'] or 0, windows[i]['percentLeft']))
