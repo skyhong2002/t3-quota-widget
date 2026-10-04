@@ -20,26 +20,29 @@ struct MachinesTile: View {
     let entry: Entry
     @Environment(\.widgetFamily) var family
     var body: some View {
+        Fitted { s in layout(s) }.containerBackground(.background, for: .widget)
+    }
+    func layout(_ s: CGFloat) -> some View {
         let t = entry.t
         let large = family == .systemLarge
         let machines = entry.ledger?.machines ?? []
-        VStack(alignment: .leading, spacing: large ? 10 : 4) {
+        return VStack(alignment: .leading, spacing: (large ? 10 : 4) * s) {
             WidgetHeader(title: t("機器", "Machines"), source: "ComputAI",
                          trailing: t("\(machines.filter(\.online).count)/\(machines.count) 在線", "\(machines.filter(\.online).count)/\(machines.count) online"),
-                         updatedAt: entry.ledger?.updatedAt, date: entry.date, t: t)
+                         updatedAt: entry.ledger?.updatedAt, date: entry.date, t: t, s: s)
             if entry.ledger == nil { NoLedger(t: t) } else {
-                Grid(alignment: .trailing, horizontalSpacing: large ? 14 : 10, verticalSpacing: large ? 8 : 1.5) {
+                Grid(alignment: .trailing, horizontalSpacing: (large ? 14 : 10) * s, verticalSpacing: (large ? 8 : 1.5) * s) {
                     GridRow {
                         Text("").gridColumnAlignment(.leading)
                         Text("CPU"); Text("GPU")
                         if large { Text(t("記憶體", "Memory")) }
                         Text(t("功耗", "Power"))
-                    }.font(.system(size: large ? 10 : 8)).foregroundStyle(.secondary)
+                    }.font(.system(size: (large ? 10 : 8) * s)).foregroundStyle(.secondary)
                     ForEach(machines, id: \.name) { machine in
                         GridRow {
-                            HStack(spacing: 5) {
-                                Circle().fill(machine.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 6, height: 6)
-                                Text(machine.name).lineLimit(1).minimumScaleFactor(0.8)
+                            HStack(spacing: 5 * s) {
+                                Circle().fill(machine.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 6 * s, height: 6 * s)
+                                Text(machine.name).lineLimit(1).truncationMode(.middle)
                             }.frame(maxWidth: .infinity, alignment: .leading).gridColumnAlignment(.leading)
                             Text("\(machine.cpu)%").foregroundStyle(machine.cpu >= 80 ? .orange : .primary)
                             Text(machine.gpu.map { "\($0)%" } ?? "–").foregroundStyle(machine.gpu == nil ? .secondary : .primary)
@@ -47,10 +50,10 @@ struct MachinesTile: View {
                             Text(machine.watts.map { "\($0) W" } ?? "–").foregroundStyle(machine.watts == nil ? .secondary : .primary)
                         }.opacity(machine.online ? 1 : 0.5)
                     }
-                }.font(.system(size: large ? 14 : 10.5)).monospacedDigit()
+                }.font(.system(size: (large ? 14 : 10.5) * s)).monospacedDigit()
                 Spacer(minLength: 0)
             }
-        }.containerBackground(.background, for: .widget)
+        }
     }
 }
 
@@ -154,52 +157,53 @@ struct PaceTile: View {
     let entry: Entry
     @Environment(\.widgetFamily) var family
     var body: some View {
+        Fitted { s in layout(s) }.containerBackground(.background, for: .widget)
+    }
+    func layout(_ s: CGFloat) -> some View {
         let t = entry.t
         let large = family == .systemLarge
         let late = entry.pace.filter { $0.windows.contains { $0.runsOutIn != nil } }.count
-        VStack(alignment: .leading, spacing: large ? 9 : 5) {
+        return VStack(alignment: .leading, spacing: (large ? 9 : 5) * s) {
             WidgetHeader(title: t("額度速度", "Limit Pace"), source: "T3 Code",
                          trailing: late == 0 ? t("都撐得到重置", "All on track") : t("\(late) 個帳號會提早用完", "\(late) accounts run out early"),
                          trailingColor: late == 0 ? .secondary : .orange,
-                         updatedAt: entry.pace.map(\.updatedAt).min(), date: entry.date, t: t)
+                         updatedAt: entry.pace.map(\.updatedAt).min(), date: entry.date, t: t, s: s)
             if entry.pace.isEmpty {
-                Spacer(minLength: 0)
-                Text(t("等待 T3 帳號資料", "Waiting for T3 accounts")).font(.system(size: 13, weight: .medium))
-                Spacer(minLength: 0)
+                Text(t("等待 T3 帳號資料", "Waiting for T3 accounts")).font(.system(size: 13 * s, weight: .medium))
             }
             ForEach(Array(entry.pace.enumerated()), id: \.offset) { _, account in
                 if large {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4 * s) {
+                        HStack(alignment: .firstTextBaseline, spacing: 5 * s) {
                             Text(providerName(account.provider)).foregroundStyle(providerColor(account.provider)).fontWeight(.bold)
-                            Text(account.name).fontWeight(.semibold).lineLimit(1)
+                            Text(account.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
                             Spacer()
-                            Text(account.plan).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                        }.font(.system(size: 14))
+                            Text(account.plan).font(.system(size: 10 * s)).foregroundStyle(.secondary).lineLimit(1)
+                        }.font(.system(size: 14 * s))
                         ForEach(Array(account.windows.enumerated()), id: \.offset) { _, window in
-                            HStack(spacing: 7) {
-                                Text(t.window(window.title)).frame(width: 72, alignment: .leading).lineLimit(1).minimumScaleFactor(0.8)
-                                PaceBar(provider: account.provider, window: window).frame(height: 6)
-                                Text("\(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit().frame(width: 34, alignment: .trailing)
-                                PaceStatus(window: window, t: t, short: true).frame(width: 90, alignment: .trailing).lineLimit(1).minimumScaleFactor(0.8)
-                            }.font(.system(size: 12))
+                            HStack(spacing: 7 * s) {
+                                Text(t.window(window.title)).frame(width: 86 * s, alignment: .leading).lineLimit(1)
+                                PaceBar(provider: account.provider, window: window).frame(height: 6 * s)
+                                Text("\(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit().frame(width: 34 * s, alignment: .trailing)
+                                PaceStatus(window: window, t: t, short: true).frame(width: 90 * s, alignment: .trailing).lineLimit(1)
+                            }.font(.system(size: 12 * s))
                         }
                     }
                 } else {
                     // One line per account: its most urgent window.
                     let window = account.windows[min(account.worst, account.windows.count - 1)]
-                    HStack(spacing: 7) {
+                    HStack(spacing: 7 * s) {
                         Text(account.name).fontWeight(.semibold).foregroundStyle(providerColor(account.provider))
-                            .lineLimit(1).truncationMode(.middle).frame(width: 84, alignment: .leading)
-                        Text(t.window(window.title)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).frame(width: 40, alignment: .leading)
-                        PaceBar(provider: account.provider, window: window).frame(height: 6)
-                        Text("\(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit().frame(width: 34, alignment: .trailing)
-                        PaceStatus(window: window, t: t, short: true).font(.system(size: 11)).lineLimit(1).minimumScaleFactor(0.8).frame(width: 74, alignment: .trailing)
-                    }.font(.system(size: 12))
+                            .lineLimit(1).truncationMode(.middle).frame(width: 80 * s, alignment: .leading)
+                        Text(t.window(window.title)).font(.system(size: 10 * s)).foregroundStyle(.secondary).lineLimit(1).frame(width: 42 * s, alignment: .leading)
+                        PaceBar(provider: account.provider, window: window).frame(height: 6 * s)
+                        Text("\(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit().frame(width: 34 * s, alignment: .trailing)
+                        PaceStatus(window: window, t: t, short: true).font(.system(size: 11 * s)).lineLimit(1).frame(width: 88 * s, alignment: .trailing)
+                    }.font(.system(size: 12 * s))
                 }
             }
             Spacer(minLength: 0)
-        }.containerBackground(.background, for: .widget)
+        }
     }
 }
 

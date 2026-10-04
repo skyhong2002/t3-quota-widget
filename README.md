@@ -52,11 +52,13 @@ Only machine and device names, totals and limit percentages are published; proje
 
 Every widget names its data source next to its title: **T3 Code** for quotas and pace, **ComputAI** for spend and machines. When the data is more than 15 minutes old, the summary on the right turns into an orange stale warning. The gallery names are bilingual and each description starts with the source.
 
-Widgets are in Traditional Chinese by default. Switch to English, or follow the macOS language, with:
+Widgets follow the macOS language: Traditional Chinese when it comes first in Language & Region, English otherwise. To pin one:
 
 ```sh
-defaults write tw.skyhong.t3usage language en     # or zh, or auto
+defaults write tw.skyhong.t3usage language zh     # or en; delete the key to follow macOS again
 ```
+
+Dense widgets (額度速度, the overview, single accounts, machines) lay themselves out at full size first and step down evenly to 60% until they fit the space macOS gives them, so text never runs off the edge.
 
 The background app picks it up on its next sync (within 30 seconds); WidgetKit decides when the desktop redraws.
 

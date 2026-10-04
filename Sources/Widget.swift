@@ -73,6 +73,18 @@ func isStale(_ raw: String?, at date: Date) -> Bool {
 }
 
 /// Title, where the data comes from, and a summary on the right that turns into a stale warning.
+/// Lays the content out at full size and, if it is taller than the widget, at smaller scales until it fits.
+/// Every font and fixed width is multiplied by the scale, so the whole widget shrinks evenly.
+struct Fitted<Content: View>: View {
+    @ViewBuilder let content: (CGFloat) -> Content
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            content(1); content(0.92); content(0.84); content(0.76); content(0.68); content(0.6)
+        }
+    }
+}
+
+/// Title, where the data comes from, and a summary on the right that turns into a stale warning.
 struct WidgetHeader: View {
     let title: String
     let source: String
@@ -81,71 +93,75 @@ struct WidgetHeader: View {
     var updatedAt: String?
     let date: Date
     let t: Words
+    var s: CGFloat = 1
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(title).font(.system(size: 14, weight: .bold)).layoutPriority(1)
-            if !source.isEmpty { Text(source).font(.system(size: 10)).foregroundStyle(.secondary) }
+        HStack(alignment: .firstTextBaseline, spacing: 6 * s) {
+            Text(title).font(.system(size: 14 * s, weight: .bold)).layoutPriority(1)
+            if !source.isEmpty { Text(source).font(.system(size: 10 * s)).foregroundStyle(.secondary) }
             Spacer(minLength: 4)
             if updatedAt != nil && isStale(updatedAt, at: date) {
                 Text(t("資料未更新", "Data is stale")).foregroundStyle(.orange)
             } else {
                 Text(trailing).foregroundStyle(trailingColor)
             }
-        }.font(.system(size: 10)).lineLimit(1)
+        }.font(.system(size: 10 * s)).lineLimit(1)
     }
 }
 
 struct Tile: View {
     let entry: Entry
     var body: some View {
+        Fitted { s in layout(s) }.containerBackground(.background, for: .widget)
+    }
+    func layout(_ s: CGFloat) -> some View {
         let t = entry.t
         let checked = entry.accounts.compactMap { $0.usage?.updatedAt }.min()
-        VStack(alignment: .leading, spacing: 3) {
-            WidgetHeader(title: t("帳號額度", "Account Quotas"), source: "T3 Code", trailing: t("剩餘 / 重置", "Left / resets in"), updatedAt: checked, date: entry.date, t: t)
-            if entry.accounts.isEmpty { Spacer(); Text(t("請開啟 T3 帳號額度，等待資料同步。", "Open the T3 quota app and wait for the first sync.")).font(.caption); Spacer() }
+        return VStack(alignment: .leading, spacing: 3 * s) {
+            WidgetHeader(title: t("帳號額度", "Account Quotas"), source: "T3 Code", trailing: t("剩餘 / 重置", "Left / resets in"), updatedAt: checked, date: entry.date, t: t, s: s)
+            if entry.accounts.isEmpty { Text(t("請開啟 T3 帳號額度，等待資料同步。", "Open the T3 quota app and wait for the first sync.")).font(.system(size: 11 * s)) }
             ForEach(entry.accounts) { account in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
+                VStack(alignment: .leading, spacing: 2 * s) {
+                    HStack(spacing: 4 * s) {
                         Text(providerName(account.provider)).foregroundStyle(providerColor(account.provider))
-                        Text(account.label).lineLimit(1).minimumScaleFactor(0.75)
+                        Text(account.label).lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 4)
-                        Text(t.plan(account.plan)).font(.system(size: 10, weight: .regular)).foregroundStyle(.secondary).lineLimit(1)
-                    }.font(.system(size: 11, weight: .semibold))
+                        Text(t.plan(account.plan)).font(.system(size: 10 * s, weight: .regular)).foregroundStyle(.secondary).lineLimit(1)
+                    }.font(.system(size: 11 * s, weight: .semibold))
                     if let credits = account.resetCredits {
                         Text(t("重置券 \(credits.availableCount) · 到期 \(t.until(credits.nextExpiresAt, from: entry.date))",
                                "\(credits.availableCount) reset credit\(credits.availableCount == 1 ? "" : "s") · expire in \(t.until(credits.nextExpiresAt, from: entry.date))"))
-                            .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                            .font(.system(size: 9 * s)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     if let usage = account.usage {
                         ForEach(Array(usage.usageRows.enumerated()), id: \.offset) { _, row in
-                            HStack(spacing: 5) {
-                                Text(t.window(row.title)).frame(width: 70, alignment: .leading).lineLimit(1)
+                            HStack(spacing: 5 * s) {
+                                Text(t.window(row.title)).frame(width: 70 * s, alignment: .leading).lineLimit(1)
                                 GeometryReader { g in
                                     ZStack(alignment: .leading) {
                                         Capsule().fill(Color.primary.opacity(0.10))
                                         Capsule().fill(row.percentLeft < 15 ? Color.red : providerColor(account.provider)).frame(width: max(0, g.size.width * row.percentLeft / 100))
                                     }
-                                }.frame(height: 4)
-                                Text("\(Int(row.percentLeft))%").monospacedDigit().frame(width: 30, alignment: .trailing)
-                                Text(t.until(row.window.resetsAt, from: entry.date)).lineLimit(1).foregroundStyle(.secondary).frame(width: 64, alignment: .trailing)
-                            }.font(.system(size: 10))
+                                }.frame(height: 4 * s)
+                                Text("\(Int(row.percentLeft))%").monospacedDigit().frame(width: 30 * s, alignment: .trailing)
+                                Text(t.until(row.window.resetsAt, from: entry.date)).lineLimit(1).foregroundStyle(.secondary).frame(width: 64 * s, alignment: .trailing)
+                            }.font(.system(size: 10 * s))
                         }
-                    } else { Text(t("T3 尚無額度資料", "No quota from T3 yet")).font(.system(size: 9)).foregroundStyle(.secondary) }
+                    } else { Text(t("T3 尚無額度資料", "No quota from T3 yet")).font(.system(size: 9 * s)).foregroundStyle(.secondary) }
                 }
                 if account.id != entry.accounts.last?.id { Divider() }
             }
             Spacer(minLength: 0)
             if let spend = entry.spend {
-                HStack(spacing: 4) {
+                HStack(spacing: 4 * s) {
                     Text("ComputAI").foregroundStyle(.secondary)
                     Text(t("今日 \(dollars(spend.todayUSD))", "Today \(dollars(spend.todayUSD))")).fontWeight(.semibold)
                     Text(t("本月 \(dollars(spend.monthUSD))", "Month \(dollars(spend.monthUSD))")).fontWeight(.semibold)
                     if spend.unpricedModels > 0 { Text(t("+ 未計價", "+ unpriced")).foregroundStyle(.orange) }
                     Spacer(minLength: 0)
                     if spend.devices > 1 { Text(t("\(spend.devices) 台", "\(spend.devices) computers")).foregroundStyle(.secondary) }
-                }.font(.system(size: 9)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                }.font(.system(size: 9 * s)).monospacedDigit().lineLimit(1)
             }
-        }.containerBackground(.background, for: .widget)
+        }
     }
 }
 struct T3QuotaWidget: Widget {
@@ -174,57 +190,61 @@ struct SingleTile: View {
     let entry: SingleEntry
     @Environment(\.widgetFamily) var family
     var body: some View {
+        Fitted { s in layout(s) }.containerBackground(.background, for: .widget)
+    }
+    func layout(_ s: CGFloat) -> some View {
         let t = entry.t
         let large = family == .systemLarge
-        VStack(alignment: .leading, spacing: large ? 14 : 4) {
+        return VStack(alignment: .leading, spacing: (large ? 14 : 4) * s) {
             if let account = entry.account {
                 let color = providerColor(account.provider)
                 HStack(alignment: .firstTextBaseline) {
-                    Text(providerName(account.provider)).font(.system(size: large ? 20 : 18, weight: .bold)).foregroundStyle(color)
+                    Text(providerName(account.provider)).font(.system(size: (large ? 20 : 18) * s, weight: .bold)).foregroundStyle(color)
                     Spacer()
-                    Text(t.plan(account.plan)).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(t.plan(account.plan)).font(.system(size: 12 * s, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                 }
                 HStack(alignment: .firstTextBaseline) {
-                    Text(account.label).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                    Text(account.label).font(.system(size: 13 * s, weight: .medium)).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     if isStale(account.usage?.updatedAt, at: entry.date) && account.usage != nil {
                         Text(t("資料未更新", "Data is stale")).foregroundStyle(.orange)
                     } else {
                         Text("T3 Code").foregroundStyle(.secondary)
                     }
-                }.font(.system(size: 10))
+                }.font(.system(size: 10 * s))
                 if let usage = account.usage {
                     ForEach(Array(usage.usageRows.enumerated()), id: \.offset) { _, row in
-                        VStack(spacing: 4) {
+                        VStack(spacing: 4 * s) {
                             HStack {
-                                Text(t.window(row.title)).font(.system(size: 12, weight: .medium))
+                                Text(t.window(row.title)).font(.system(size: 12 * s, weight: .medium))
                                 Spacer()
-                                Text(t("剩 \(Int(row.percentLeft))%", "\(Int(row.percentLeft))% left")).font(.system(size: 14, weight: .semibold)).monospacedDigit()
-                                Text(t.until(row.window.resetsAt, from: entry.date)).font(.system(size: 11)).foregroundStyle(.secondary)
-                            }
+                                Text(t("剩 \(Int(row.percentLeft))%", "\(Int(row.percentLeft))% left")).font(.system(size: 14 * s, weight: .semibold)).monospacedDigit()
+                                Text(t.until(row.window.resetsAt, from: entry.date)).font(.system(size: 11 * s)).foregroundStyle(.secondary)
+                            }.lineLimit(1)
                             GeometryReader { g in
                                 ZStack(alignment: .leading) {
                                     Capsule().fill(Color.primary.opacity(0.10))
                                     Capsule().fill(row.percentLeft < 15 ? .red : color).frame(width: g.size.width * row.percentLeft / 100)
                                 }
-                            }.frame(height: 6)
+                            }.frame(height: 6 * s)
                         }
                     }
                     if large { Spacer(minLength: 0) }
                     if let credits = account.resetCredits {
                         Text(t("重置券 \(credits.availableCount) 張 · 到期 \(t.until(credits.nextExpiresAt, from: entry.date))",
                                "\(credits.availableCount) reset credit\(credits.availableCount == 1 ? "" : "s") · expire in \(t.until(credits.nextExpiresAt, from: entry.date))"))
-                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                            .font(.system(size: 12 * s)).foregroundStyle(.secondary).lineLimit(1)
                     }
                     if large, let raw = usage.usageRows.first?.window.resetsAt, let reset = ISO8601DateFormatter().date(from: raw) {
-                        HStack { Text(t("下次重置", "Next reset")); Text(reset, format: .dateTime.month().day().hour().minute()) }.font(.system(size: 12)).foregroundStyle(.secondary)
+                        HStack { Text(t("下次重置", "Next reset")); Text(reset, format: .dateTime.month().day().hour().minute()) }.font(.system(size: 12 * s)).foregroundStyle(.secondary)
                     }
-                } else { Text(t("T3 尚無此帳號的額度資料", "No quota from T3 for this account yet")).font(.caption).foregroundStyle(.secondary) }
+                } else { Text(t("T3 尚無此帳號的額度資料", "No quota from T3 for this account yet")).font(.system(size: 11 * s)).foregroundStyle(.secondary) }
             } else {
-                Text(t("等待 T3 帳號資料", "Waiting for T3 accounts")).font(.headline)
-                Text(t("請確認 T3 帳號設定與背景同步。", "Check the T3 account settings and the background sync.")).font(.system(size: 13)).foregroundStyle(.secondary)
+                Text(t("等待 T3 帳號資料", "Waiting for T3 accounts")).font(.system(size: 15 * s, weight: .semibold))
+                Text(t("請確認 T3 帳號設定與背景同步。", "Check the T3 account settings and the background sync.")).font(.system(size: 13 * s)).foregroundStyle(.secondary)
             }
-        }.containerBackground(.background, for: .widget)
+            if !large { Spacer(minLength: 0) }
+        }
     }
 }
 struct FixedAccountWidget: Widget {
