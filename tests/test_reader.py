@@ -1,4 +1,4 @@
-import importlib.util, pathlib, tempfile, json, unittest
+import importlib.util, pathlib, tempfile, json, socket, threading, unittest
 spec = importlib.util.spec_from_file_location('reader', pathlib.Path(__file__).resolve().parents[1]/'scripts/reader.py')
 r = importlib.util.module_from_spec(spec); spec.loader.exec_module(r)
 class ReaderTest(unittest.TestCase):
@@ -63,3 +63,47 @@ class ReaderTest(unittest.TestCase):
         self.assertEqual((spent['runsOutIn'], spent['percentLeft']), (0, 0))
         self.assertIsNone(fresh['runsOutIn'])                                        # too early in the window to project
         self.assertEqual(a['worst'], 2)
+    def test_nudge_only_when_t3_stopped_and_not_asked_recently(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old = r.NUDGE_STATE; r.NUDGE_STATE = pathlib.Path(directory)/'nudge.json'
+            try:
+                fresh = [{'usage': {'updatedAt': r.utc(10000 - 600)}}, {'label': 'no usage'}]
+                stale = fresh + [{'usage': {'updatedAt': r.utc(10000 - 601)}}]
+                self.assertFalse(r.should_nudge(fresh, now=10000))
+                self.assertFalse(r.should_nudge([{'label': 'no usage'}], now=10000))
+                self.assertTrue(r.should_nudge(stale, now=10000))
+                r.record_nudge(10000, 'started')
+                self.assertFalse(r.should_nudge(stale, now=10600))
+                self.assertTrue(r.should_nudge(stale, now=10601))
+            finally: r.NUDGE_STATE = old
+    def test_ws_call_sends_one_rpc_and_reads_its_exit(self):
+        server = socket.socket(); server.bind(('127.0.0.1', 0)); server.listen(1); seen = {}
+        def serve():
+            conn, _ = server.accept(); head = b''
+            while b'\r\n\r\n' not in head: head += conn.recv(1)
+            seen['auth'] = b'Authorization: Bearer secret-token' in head
+            conn.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
+            h = conn.recv(2); n = h[1] & 127; mask = conn.recv(4); body = b''
+            while len(body) < n: body += conn.recv(n - len(body))
+            seen['request'] = json.loads(bytes(b ^ mask[i % 4] for i, b in enumerate(body)))
+            for message in ({'_tag': 'Chunk', 'requestId': '1'}, {'_tag': 'Exit', 'requestId': '1', 'exit': {'_tag': 'Success'}}):
+                data = json.dumps(message).encode(); conn.sendall(bytes([0x81, len(data)]) + data)
+            conn.close()
+        thread = threading.Thread(target=serve); thread.start()
+        try: self.assertEqual(r.ws_call(server.getsockname()[1], 'secret-token', 'server.refreshProviders', {}), 'Success')
+        finally: thread.join(); server.close()
+        self.assertTrue(seen['auth'])
+        self.assertEqual((seen['request']['tag'], seen['request']['payload']), ('server.refreshProviders', {}))
+    def test_refresh_revokes_its_token_even_when_t3_is_unreachable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); old = (r.T3, r.T3_RUNTIME)
+            fake = root/'t3'
+            fake.write_text('#!/bin/sh\necho "$@" >> "$(dirname "$0")/calls"\n[ "$3" = issue ] && echo \'{"token": "t", "sessionId": "s1"}\'\nexit 0\n')
+            fake.chmod(0o755)
+            closed = socket.socket(); closed.bind(('127.0.0.1', 0)); port = closed.getsockname()[1]; closed.close()
+            (root/'runtime.json').write_text(json.dumps({'port': port}))
+            r.T3, r.T3_RUNTIME = fake, root/'runtime.json'
+            try:
+                with self.assertRaises(OSError): r.refresh_t3()
+                self.assertEqual((root/'calls').read_text().splitlines()[-1], 'auth session revoke s1')
+            finally: r.T3, r.T3_RUNTIME = old

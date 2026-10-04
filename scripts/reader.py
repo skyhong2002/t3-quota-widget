@@ -1,10 +1,12 @@
 """Publish T3 quota-only caches to CodexBar's native account widgets."""
+import base64
 import datetime as dt
 import hashlib
 import json
 import math
 import os
 from pathlib import Path
+import socket
 import subprocess
 import sys
 import tempfile
@@ -19,6 +21,11 @@ COMPUTAI = ROOT / '.local/bin/computai'
 SPEND_CACHE = ROOT / 'Library/Application Support/T3UsageDesktop/spend.json'
 SPEND_EVERY = 300
 STATE_URL = 'http://127.0.0.1:8765/api/state'
+T3 = ROOT / '.local/bin/t3'
+T3_RUNTIME = ROOT / '.t3/userdata/server-runtime.json'
+NUDGE_STATE = ROOT / 'Library/Application Support/T3UsageDesktop/nudge.json'
+NUDGE_AFTER = 600   # T3 refreshes every 5 minutes; two missed rounds means it has stopped
+NUDGE_EVERY = 600
 
 
 def iso(value):
@@ -201,6 +208,101 @@ def spend_from(ledger):
             'unpricedModels': ledger['unpricedModels'], 'updatedAt': ledger['updatedAt']}
 
 
+def epoch(value):
+    return dt.datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+
+
+def should_nudge(accounts, now=None):
+    """True when T3 has stopped refreshing quotas and we have not asked it to recently.
+    T3 only refreshes while one of its windows reports activity, and that report can stop after sleep."""
+    now = time.time() if now is None else now
+    checked = [epoch(a['usage']['updatedAt']) for a in accounts if a.get('usage')]
+    if not checked or now - min(checked) <= NUDGE_AFTER:
+        return False
+    try:
+        last = json.loads(NUDGE_STATE.read_text()).get('attemptedEpoch', 0)
+    except (OSError, ValueError, AttributeError):
+        last = 0
+    return now - last > NUDGE_EVERY
+
+
+def record_nudge(now, result):
+    NUDGE_STATE.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile('w', dir=NUDGE_STATE.parent, delete=False) as tmp:
+        json.dump({'attemptedEpoch': now, 'result': result}, tmp)
+    os.replace(tmp.name, NUDGE_STATE)
+
+
+def nudge(accounts, now=None):
+    """Refresh T3 in a detached process so the snapshot is not held up; the next snapshot reads the result."""
+    now = time.time() if now is None else now
+    if not T3.exists() or not should_nudge(accounts, now):
+        return
+    record_nudge(now, 'started')
+    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), '--refresh-t3'], start_new_session=True,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def t3(*args):
+    return subprocess.run([str(T3), *args], capture_output=True, text=True, timeout=30, check=True).stdout
+
+
+def ws_call(port, token, tag, payload, timeout=60):
+    """One RPC over T3's /ws endpoint, the same call its own refresh button makes. Returns the exit tag."""
+    with socket.create_connection(('127.0.0.1', port), timeout=timeout) as sock:
+        key = base64.b64encode(os.urandom(16)).decode()
+        sock.sendall(('GET /ws HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+                      'Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer %s\r\n\r\n'
+                      % (port, key, token)).encode())
+        head = b''
+        while b'\r\n\r\n' not in head:
+            chunk = sock.recv(1)
+            if not chunk:
+                raise ConnectionError('T3 closed the connection')
+            head += chunk
+        if b' 101 ' not in head.split(b'\r\n', 1)[0]:
+            raise ConnectionError(head.split(b'\r\n', 1)[0].decode(errors='replace'))
+
+        def read(n):
+            data = b''
+            while len(data) < n:
+                chunk = sock.recv(n - len(data))
+                if not chunk:
+                    raise ConnectionError('T3 closed the connection')
+                data += chunk
+            return data
+
+        body = json.dumps({'_tag': 'Request', 'id': '1', 'tag': tag, 'payload': payload, 'headers': []}).encode()
+        mask = os.urandom(4)
+        size = bytes([0x80 | len(body)]) if len(body) < 126 else bytes([0x80 | 126]) + len(body).to_bytes(2, 'big')
+        sock.sendall(bytes([0x81]) + size + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(body)))
+        while True:
+            first, second = read(2)
+            n = second & 127
+            if n == 126:
+                n = int.from_bytes(read(2), 'big')
+            elif n == 127:
+                n = int.from_bytes(read(8), 'big')
+            data = read(n)
+            if first & 15 == 8:
+                raise ConnectionError('T3 closed the connection')
+            if first & 15 != 1:
+                continue
+            message = json.loads(data)
+            if isinstance(message, dict) and message.get('_tag') == 'Exit' and message.get('requestId') == '1':
+                return message['exit']['_tag']
+
+
+def refresh_t3():
+    """Ask the running T3 server to refresh every provider, with a short-lived token revoked right after."""
+    port = json.loads(T3_RUNTIME.read_text())['port']
+    issued = json.loads(t3('auth', 'session', 'issue', '--json', '--ttl', '5m', '--label', 'T3 quota widget refresh'))
+    try:
+        return ws_call(port, issued['token'], 'server.refreshProviders', {})
+    finally:
+        t3('auth', 'session', 'revoke', issued['sessionId'])
+
+
 def build_snapshot(settings):
     accounts = []
     for source in SOURCES:
@@ -211,10 +313,20 @@ def build_snapshot(settings):
             expected = config.get('displayName', source)
             provider = 'codex' if source.startswith('codex') else 'claude'
             accounts.append({'id': provider + '/t3:' + hashlib.sha256((source + ':' + expected.strip().lower()).encode()).hexdigest(), 'provider': provider, 'label': expected})
+    try:
+        nudge(accounts)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
     state = computai_state()
     details = ledger(state) if state else None
     return {'accounts': accounts, 'pace': pace(accounts), 'spend': spend_from(details) if details else spend(settings), 'computai': details, 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
 
 
-if __name__ == '__main__':
+if __name__ == '__main__' and '--refresh-t3' in sys.argv:
+    try:
+        result = refresh_t3()
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        result = type(error).__name__   # never the message: it could carry the token
+    record_nudge(time.time(), result)
+elif __name__ == '__main__':
     print(json.dumps(build_snapshot(json.loads(SETTINGS.read_text())), separators=(',', ':')))

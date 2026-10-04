@@ -57,7 +57,7 @@ The background app picks this up within 30 seconds; WidgetKit decides when the d
 
 The background app reads `~/.t3/userdata/settings.json` and `~/.t3/caches/*.json` every 30 seconds, plus ComputAI when it is available, and writes a trimmed snapshot to `/Users/Shared/T3QuotaWidget/accounts.json`. The widgets are sandboxed and can only read that one directory.
 
-T3 Code fetches the quotas; this app never calls the providers and never spends reset credits. If T3 Code stops refreshing its cache, the quota widgets keep the last values and mark them stale.
+T3 Code fetches the quotas; this app never calls the providers and never spends reset credits. T3 Code only refreshes them while one of its windows reports activity, and that report can stop after the Mac sleeps. So when the cache is more than 10 minutes old, the background app asks the running T3 Code to refresh, at most once every 10 minutes: it issues a 5-minute token with T3's own CLI (`~/.local/bin/t3 auth session issue`), makes the same `server.refreshProviders` call as T3's refresh button over `127.0.0.1`, and revokes the token. The last attempt is recorded in `~/Library/Application Support/T3UsageDesktop/nudge.json`. If T3 Code is not running or the CLI is missing, the quota widgets keep the last values and mark them stale.
 
 Supported T3 instance IDs: `claude-nycu`, `claudeAgent`, `claude-cs14`, `codex-nycu`, `codex`. A cache is shown only when its driver and signed-in email match the T3 settings.
 
