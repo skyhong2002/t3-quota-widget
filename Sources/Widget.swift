@@ -13,12 +13,15 @@ struct Ledger: Codable {
     struct Device: Codable { var name: String; var usd: Double; var stale: Bool }
     struct Machine: Codable { var name: String; var online: Bool; var cpu: Int; var gpu: Int?; var memory: Int?; var watts: Int? }
     struct Day: Codable { var day: String; var claude: Double; var codex: Double }
-    struct Pace: Codable { var provider: String; var title: String; var percentLeft: Double; var elapsedPercent: Double?; var resetsIn: Double?; var runsOutIn: Double?; var stale: Bool }
     var updatedAt: String; var todayUSD: Double; var yesterdayUSD: Double?; var monthUSD: Double; var projectedUSD: Double?
-    var sources: [Source]; var devices: [Device]; var machines: [Machine]; var days: [Day]; var pace: [Pace]; var unpricedModels: Int
+    var sources: [Source]; var devices: [Device]; var machines: [Machine]; var days: [Day]; var unpricedModels: Int
 }
-struct Snapshot: Codable { var accounts: [Account]; var spend: Spend?; var computai: Ledger? }
-struct Entry: TimelineEntry { let date: Date; let accounts: [Account]; var spend: Spend? = nil; var ledger: Ledger? = nil }
+struct AccountPace: Codable {
+    struct Window: Codable { var title: String; var percentLeft: Double; var elapsedPercent: Double; var resetsIn: Double; var runsOutIn: Double? }
+    var provider: String; var name: String; var plan: String; var updatedAt: String; var worst: Int; var windows: [Window]
+}
+struct Snapshot: Codable { var accounts: [Account]; var pace: [AccountPace]?; var spend: Spend?; var computai: Ledger? }
+struct Entry: TimelineEntry { let date: Date; let accounts: [Account]; var pace: [AccountPace] = []; var spend: Spend? = nil; var ledger: Ledger? = nil }
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry { Entry(date: Date(), accounts: []) }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) { completion(read()) }
@@ -29,7 +32,7 @@ struct Provider: TimelineProvider {
         let root = Optional(URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true))
         guard let root, let data = try? Data(contentsOf: root.appendingPathComponent("accounts.json")),
               let value = try? JSONDecoder().decode(Snapshot.self, from: data) else { return Entry(date: Date(), accounts: []) }
-        return Entry(date: Date(), accounts: value.accounts, spend: value.spend, ledger: value.computai)
+        return Entry(date: Date(), accounts: value.accounts, pace: value.pace ?? [], spend: value.spend, ledger: value.computai)
     }
 }
 func dollars(_ value: Double) -> String { "$" + value.formatted(.number.precision(.fractionLength(0))) }

@@ -36,11 +36,12 @@ The installer replaces this app and its background launch agent. It does not mod
 
 If [ComputAI](https://github.com/Sean-Hawks/computai) is installed at `~/.local/bin/computai`, search the widget gallery for **AI 花費** (small or medium) to add this month's and today's spend as its own tile. The overview widget also adds one line: today's and this month's spend at API list prices, how many machines it covers, and `+ 未計價` when some models have no price yet. Without ComputAI the line is hidden and nothing else changes.
 
-When the ComputAI dashboard is running (`computai --web`, on 127.0.0.1:8765), four more widgets read its `/api/state` every 30 seconds:
+**額度速度** (medium, large) needs only T3: for all five accounts it projects each window in a straight line from the window start and shows whether it runs out before it resets. Medium shows each account's most urgent window, large shows every window.
+
+When the ComputAI dashboard is running (`computai --web`, on 127.0.0.1:8765), three more widgets read its `/api/state` every 30 seconds:
 
 | Widget | Sizes | Shows |
 |---|---|---|
-| 額度速度 | medium, large | each limit ComputAI reads, how much is left, and whether it runs out before it resets at the current pace |
 | 14 天花費 | medium | daily Claude and Codex spend for the last 14 days |
 | 各機器花費 | medium | this month's spend per computer |
 | 機器 | medium, large | each machine online or not, with CPU, GPU, memory and power |

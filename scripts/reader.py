@@ -19,7 +19,7 @@ COMPUTAI = ROOT / '.local/bin/computai'
 SPEND_CACHE = ROOT / 'Library/Application Support/T3UsageDesktop/spend.json'
 SPEND_EVERY = 300
 STATE_URL = 'http://127.0.0.1:8765/api/state'
-WINDOWS = {'5h': '5 小時', 'week': '每週'}
+WINDOWS = {'Session': '5 小時', 'Weekly': '每週'}
 
 
 def iso(value):
@@ -151,14 +151,6 @@ def ledger(state):
                          'gpu': round(m['gpu_util']) if m.get('gpus') and m.get('gpu_util') is not None else None,
                          'memory': round(100 * m.get('mem_used', 0) / memory) if memory else None,
                          'watts': round(m['power_w']) if m.get('power_w') is not None else None})
-    pace = []
-    for limit in state.get('limits', []):
-        window, _, model = limit['name'].partition(':')
-        early = limit.get('eta_full') is not None and limit.get('resets_in') and limit['eta_full'] < limit['resets_in']
-        pace.append({'provider': limit['source'], 'title': ((model + ' ') if model else '') + WINDOWS.get(window, window),
-                     'percentLeft': max(0, 100 - limit['used_percent']), 'elapsedPercent': limit.get('elapsed_pct'),
-                     'resetsIn': limit.get('resets_in'), 'runsOutIn': limit['eta_full'] if early else None,
-                     'stale': bool(limit.get('stale'))})
     return {'updatedAt': utc(state.get('time', time.time())),
             'todayUSD': round(state.get('today_usd') or 0, 2),
             'yesterdayUSD': round(days[-2]['claude'] + days[-2]['codex'], 2) if len(days) > 1 else None,
@@ -167,8 +159,48 @@ def ledger(state):
             'sources': [{'provider': s['source'], 'usd': round(s.get('cost_usd') or 0, 2)} for s in state.get('sources', [])],
             'devices': sorted(({'name': d['name'], 'usd': round(d.get('cost_usd') or 0, 2), 'stale': bool(d.get('stale'))}
                                for d in state.get('devices', [])), key=lambda d: -d['usd']),
-            'machines': machines, 'days': days, 'pace': pace,
+            'machines': machines, 'days': days,
             'unpricedModels': len(state.get('unpriced_models') or [])}
+
+
+def window_title(title):
+    """Session -> 5 小時, Weekly -> 每週, Weekly · Fable -> Fable 每週."""
+    window, _, model = title.partition(' · ')
+    return ((model + ' ') if model else '') + WINDOWS.get(window, window)
+
+
+def pace(accounts, now=None):
+    """How fast every T3 account burns each window, as a straight line from the window start.
+    runsOutIn is set only when the window would run out before it resets (0 when it already has)."""
+    now = time.time() if now is None else now
+    result = []
+    for account in accounts:
+        usage = account.get('usage')
+        if not usage:
+            continue
+        windows = []
+        for row in usage['usageRows']:
+            rate = row['window']
+            if not rate.get('resetsAt') or not rate.get('windowMinutes'):
+                continue
+            length = rate['windowMinutes'] * 60
+            resets_in = max(0.0, dt.datetime.fromisoformat(rate['resetsAt'].replace('Z', '+00:00')).timestamp() - now)
+            elapsed = max(0.0, length - resets_in)
+            used = rate['usedPercent']
+            runs_out = None
+            if used >= 100:
+                runs_out = 0
+            elif used > 0 and elapsed >= length * 0.05:   # too early in the window to project
+                eta = (100 - used) * elapsed / used
+                runs_out = round(eta) if eta < resets_in else None
+            windows.append({'title': window_title(row['title']), 'percentLeft': max(0, 100 - used),
+                            'elapsedPercent': round(100 * elapsed / length, 1), 'resetsIn': round(resets_in), 'runsOutIn': runs_out})
+        if windows:
+            worst = min(range(len(windows)), key=lambda i: (windows[i]['runsOutIn'] is None, windows[i]['runsOutIn'] or 0, windows[i]['percentLeft']))
+            result.append({'provider': account['provider'], 'name': account['label'].split('@')[0],
+                           'plan': (account.get('plan') or '').replace(' Subscription', ''),
+                           'updatedAt': usage['updatedAt'], 'worst': worst, 'windows': windows})
+    return result
 
 
 def spend_from(ledger):
@@ -188,7 +220,7 @@ def build_snapshot(settings):
             accounts.append({'id': provider + '/t3:' + hashlib.sha256((source + ':' + expected.strip().lower()).encode()).hexdigest(), 'provider': provider, 'label': expected})
     state = computai_state()
     details = ledger(state) if state else None
-    return {'accounts': accounts, 'spend': spend_from(details) if details else spend(settings), 'computai': details, 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
+    return {'accounts': accounts, 'pace': pace(accounts), 'spend': spend_from(details) if details else spend(settings), 'computai': details, 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
 
 
 if __name__ == '__main__':

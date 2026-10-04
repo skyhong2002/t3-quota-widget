@@ -38,13 +38,28 @@ class ReaderTest(unittest.TestCase):
                  'devices': [{'name': 'mini', 'cost_usd': 5, 'stale': False}, {'name': 'mbp', 'cost_usd': 50, 'stale': False}],
                  'machines': [{'machine': 'gpu-box', 'stale': False, 'cpu_pct': 12.4, 'gpu_util': 50.0, 'gpus': [{}], 'mem_used': 4, 'mem_total': 16, 'power_w': 99.6},
                               {'machine': 'nas', 'stale': True, 'cpu_pct': None, 'gpu_util': 0.0, 'gpus': [], 'mem_total': 0, 'power_w': None}],
-                 'limits': [{'source': 'claude', 'name': 'week:Fable', 'used_percent': 60, 'elapsed_pct': 20, 'resets_in': 1000, 'eta_full': 400},
-                            {'source': 'codex', 'name': '5h', 'used_percent': 10, 'resets_in': 1000, 'eta_full': 5000}],
                  'timeline': {'rows': [{'label': 'secret-project@mbp'}]}}
         l = r.ledger(state)
         self.assertEqual((l['yesterdayUSD'], l['projectedUSD'], l['days'][-1]), (4, 30, {'day': '10/04', 'claude': 2, 'codex': 0}))
         self.assertEqual([d['name'] for d in l['devices']], ['mbp', 'mini'])
         self.assertEqual(l['machines'][0], {'name': 'gpu-box', 'online': True, 'cpu': 12, 'gpu': 50, 'memory': 25, 'watts': 100})
         self.assertEqual(l['machines'][1], {'name': 'nas', 'online': False, 'cpu': 0, 'gpu': None, 'memory': None, 'watts': None})
-        self.assertEqual((l['pace'][0]['title'], l['pace'][0]['runsOutIn'], l['pace'][1]['title'], l['pace'][1]['runsOutIn']), ('Fable 每週', 400, '5 小時', None))
         self.assertNotIn('secret-project', json.dumps(l))
+    def test_pace_projects_every_account_from_window_start(self):
+        def row(title, used, resets_in_minutes, minutes):
+            return {'title': title, 'window': {'usedPercent': used, 'windowMinutes': minutes,
+                    'resetsAt': r.utc(1000 * 60 + resets_in_minutes * 60)}}
+        accounts = [{'provider': 'claude', 'label': 'me@example.test', 'plan': 'Claude Max Subscription',
+                     'usage': {'updatedAt': 'x', 'usageRows': [row('Session', 50, 200, 300), row('Weekly · Fable', 10, 5000, 10080),
+                                                               row('Weekly', 100, 60, 10080), row('Weekly', 1, 10079, 10080)]}},
+                    {'provider': 'codex', 'label': 'other', 'usage': None}]
+        p = r.pace(accounts, now=1000 * 60)
+        self.assertEqual(len(p), 1)
+        a = p[0]
+        self.assertEqual((a['name'], a['plan']), ('me', 'Claude Max'))
+        session, fable, spent, fresh = a['windows']
+        self.assertEqual((session['title'], session['runsOutIn']), ('5 小時', 6000))   # 50% in 100 min -> 100 more min, reset in 200
+        self.assertEqual((fable['title'], fable['runsOutIn']), ('Fable 每週', None))
+        self.assertEqual((spent['runsOutIn'], spent['percentLeft']), (0, 0))
+        self.assertIsNone(fresh['runsOutIn'])                                        # too early in the window to project
+        self.assertEqual(a['worst'], 2)

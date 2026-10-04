@@ -16,7 +16,7 @@ final class Delegate: NSObject, NSApplicationDelegate {
             try p.run(); let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
             guard p.terminationStatus == 0, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let accounts = object["accounts"] else { return }
             var published: [String: Any] = ["accounts": accounts]
-            for key in ["spend", "computai"] {
+            for key in ["pace", "spend", "computai"] {
                 if let value = object[key], !(value is NSNull) { published[key] = value }
             }
             let payload = try JSONSerialization.data(withJSONObject: published, options: [.sortedKeys])

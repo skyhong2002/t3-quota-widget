@@ -1,8 +1,8 @@
 import SwiftUI
 import WidgetKit
 
-// Widgets drawn from the running ComputAI dashboard (computai --web): machines, spend per device,
-// the last 14 days and how fast each limit is burning.
+// Widgets drawn from the running ComputAI dashboard (computai --web): machines, spend per device and
+// the last 14 days. 額度速度 is projected from the T3 quotas of every account.
 
 struct LedgerHeader: View {
     let title: String
@@ -129,43 +129,90 @@ struct TrendTile: View {
     }
 }
 
+struct PaceBar: View {
+    let provider: String
+    let window: AccountPace.Window
+    var body: some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.1))
+                Capsule().fill(providerColor(provider)).frame(width: g.size.width * window.percentLeft / 100)
+                // Time left in the window: a bar shorter than this mark is burning faster than time.
+                Rectangle().fill(Color.primary.opacity(0.7)).frame(width: 1.5).offset(x: g.size.width * (100 - window.elapsedPercent) / 100)
+            }
+        }
+    }
+}
+
+struct PaceStatus: View {
+    let window: AccountPace.Window
+    var body: some View {
+        if window.runsOutIn == 0 {
+            Text("已用完 · \(span(window.resetsIn))後重置").foregroundStyle(.red)
+        } else if let out = window.runsOutIn {
+            Text("\(span(out))後用完 · \(span(window.resetsIn))後重置").foregroundStyle(.orange)
+        } else {
+            Text("撐得到重置 · \(span(window.resetsIn))").foregroundStyle(.secondary)
+        }
+    }
+}
+
 struct PaceTile: View {
     let entry: Entry
     @Environment(\.widgetFamily) var family
+    func stale(_ account: AccountPace) -> Bool {
+        guard let checked = ISO8601DateFormatter().date(from: account.updatedAt) else { return true }
+        return entry.date.timeIntervalSince(checked) > 900
+    }
     var body: some View {
         let large = family == .systemLarge
-        VStack(alignment: .leading, spacing: large ? 12 : 5) {
-            LedgerHeader(title: "額度速度", trailing: "照目前速度推算", ledger: entry.ledger, date: entry.date)
-            if let pace = entry.ledger?.pace, !pace.isEmpty {
-                ForEach(Array(pace.prefix(large ? 8 : 4).enumerated()), id: \.offset) { _, limit in
+        let late = entry.pace.filter { $0.windows.contains { $0.runsOutIn != nil } }.count
+        VStack(alignment: .leading, spacing: large ? 7 : 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("額度速度").font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text(late == 0 ? "每個帳號都撐得到重置" : "\(late) 個帳號會提早用完").foregroundStyle(late == 0 ? Color.secondary : Color.orange)
+            }.font(.system(size: 9)).lineLimit(1)
+            if entry.pace.isEmpty {
+                Spacer(minLength: 0)
+                Text("等待 T3 帳號資料").font(.system(size: 12, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            ForEach(Array(entry.pace.enumerated()), id: \.offset) { _, account in
+                let name = HStack(spacing: 4) {
+                    Text(account.provider == "claude" ? "Claude" : "Codex").foregroundStyle(providerColor(account.provider)).fontWeight(.semibold)
+                    Text(account.name).lineLimit(1).truncationMode(.middle)
+                }
+                if large {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack { name; Spacer(); Text(stale(account) ? "未更新" : account.plan).foregroundStyle(stale(account) ? Color.orange : Color.secondary) }
+                            .font(.system(size: 10))
+                        ForEach(Array(account.windows.enumerated()), id: \.offset) { _, window in
+                            HStack(spacing: 6) {
+                                Text(window.title).frame(width: 58, alignment: .leading).lineLimit(1)
+                                PaceBar(provider: account.provider, window: window).frame(height: 4)
+                                Text("\(Int(window.percentLeft))%").monospacedDigit().frame(width: 28, alignment: .trailing)
+                                PaceStatus(window: window).frame(width: 118, alignment: .trailing).lineLimit(1).minimumScaleFactor(0.8)
+                            }.font(.system(size: 9))
+                        }
+                    }.opacity(stale(account) ? 0.5 : 1)
+                } else {
+                    let window = account.windows[min(account.worst, account.windows.count - 1)]
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 4) {
-                            Text(limit.provider == "claude" ? "Claude" : "Codex").foregroundStyle(providerColor(limit.provider)).fontWeight(.semibold)
-                            Text(limit.title)
-                            Spacer()
-                            Text("剩 \(Int(limit.percentLeft))%").fontWeight(.semibold).monospacedDigit()
-                        }.font(.system(size: large ? 12 : 9))
-                        GeometryReader { g in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.primary.opacity(0.1))
-                                Capsule().fill(limit.runsOutIn == nil ? providerColor(limit.provider) : .red).frame(width: g.size.width * limit.percentLeft / 100)
-                                if let elapsed = limit.elapsedPercent {
-                                    // Time left in the window: a bar shorter than this mark is burning faster than time.
-                                    Rectangle().fill(Color.primary.opacity(0.7)).frame(width: 1.5).offset(x: g.size.width * (100 - elapsed) / 100)
-                                }
-                            }
-                        }.frame(height: large ? 5 : 4)
-                        Group {
-                            if let out = limit.runsOutIn, let reset = limit.resetsIn {
-                                Text("\(span(out)) 後用完 · \(span(reset)) 後才重置").foregroundStyle(.orange)
-                            } else if let reset = limit.resetsIn {
-                                Text("撐得到重置 · \(span(reset)) 後重置").foregroundStyle(.secondary)
-                            }
-                        }.font(.system(size: large ? 10 : 7)).lineLimit(1)
-                    }.opacity(limit.stale ? 0.5 : 1)
+                            name
+                            Text(window.title).foregroundStyle(.secondary)
+                            Spacer(minLength: 4)
+                            Text("剩 \(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit()
+                        }.font(.system(size: 9))
+                        HStack(spacing: 6) {
+                            PaceBar(provider: account.provider, window: window).frame(height: 3)
+                            PaceStatus(window: window).font(.system(size: 7)).lineLimit(1).frame(width: 112, alignment: .trailing)
+                        }
+                    }.opacity(stale(account) ? 0.5 : 1)
                 }
-                Spacer(minLength: 0)
-            } else { NoLedger() }
+            }
+            Spacer(minLength: 0)
         }.containerBackground(.background, for: .widget)
     }
 }
@@ -198,7 +245,7 @@ struct PaceWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "ComputAIPace", provider: Provider()) { PaceTile(entry: $0) }
             .configurationDisplayName("額度速度")
-            .description("照目前的使用速度，每個額度會不會在重置前用完。")
+            .description("五個帳號照目前的使用速度，每個額度會不會在重置前用完。")
             .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
