@@ -23,6 +23,7 @@ struct Provider: TimelineProvider {
         return Entry(date: Date(), accounts: value.accounts, spend: value.spend)
     }
 }
+func dollars(_ value: Double) -> String { "$" + value.formatted(.number.precision(.fractionLength(0))) }
 struct Tile: View {
     let entry: Entry
     func reset(_ raw: String?) -> String {
@@ -69,11 +70,10 @@ struct Tile: View {
             }
             Spacer(minLength: 0)
             if let spend = entry.spend {
-                let usd = FloatingPointFormatStyle<Double>.Currency(code: "USD").precision(.fractionLength(0))
                 HStack(spacing: 4) {
                     Text("API 等值").foregroundStyle(.secondary)
-                    Text("今日 \(spend.todayUSD.formatted(usd))").fontWeight(.semibold)
-                    Text("本月 \(spend.monthUSD.formatted(usd))").fontWeight(.semibold)
+                    Text("今日 \(dollars(spend.todayUSD))").fontWeight(.semibold)
+                    Text("本月 \(dollars(spend.monthUSD))").fontWeight(.semibold)
                     if spend.unpricedModels > 0 { Text("+ 未計價").foregroundStyle(.orange) }
                     Spacer(minLength: 0)
                     if spend.devices > 1 { Text("\(spend.devices) 台").foregroundStyle(.secondary) }
@@ -167,8 +167,63 @@ struct FixedAccountWidget: Widget {
             .supportedFamilies([.systemMedium, .systemLarge])
     }
 }
+struct SpendTile: View {
+    let entry: Entry
+    @Environment(\.widgetFamily) var family
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("AI 花費").font(.system(size: 13, weight: .bold))
+                Spacer()
+                Text("API 等值").font(.system(size: 9)).foregroundStyle(.secondary)
+            }
+            if let spend = entry.spend {
+                Spacer(minLength: 0)
+                HStack(alignment: .lastTextBaseline, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("本月").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(dollars(spend.monthUSD)).font(.system(size: 30, weight: .bold)).minimumScaleFactor(0.6)
+                    }
+                    if family != .systemSmall {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("今日").font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text(dollars(spend.todayUSD)).font(.system(size: 20, weight: .semibold))
+                        }
+                    }
+                }.monospacedDigit().lineLimit(1)
+                if family == .systemSmall {
+                    Text("今日 \(dollars(spend.todayUSD))").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 3) {
+                    if spend.devices > 1 { Text("\(spend.devices) 台電腦 ·") }
+                    if let checked = ISO8601DateFormatter().date(from: spend.updatedAt) {
+                        if entry.date.timeIntervalSince(checked) > 900 { Text("未更新").foregroundStyle(.orange) } else { Text("\(checked.formatted(date: .omitted, time: .shortened)) 更新") }
+                    }
+                }.font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                if spend.unpricedModels > 0 {
+                    Text("另有 \(spend.unpricedModels) 個模型未計價").font(.system(size: 9)).foregroundStyle(.orange).lineLimit(1).minimumScaleFactor(0.8)
+                }
+            } else {
+                Spacer(minLength: 0)
+                Text("等待 ComputAI 資料").font(.system(size: 12, weight: .medium))
+                Text("需要安裝 computai").font(.system(size: 10)).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+        }.containerBackground(.background, for: .widget)
+    }
+}
+struct SpendWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "T3Spend", provider: Provider()) { SpendTile(entry: $0) }
+            .configurationDisplayName("AI 花費")
+            .description("本月與今日的 Claude、Codex 用量，以 API 價格換算，涵蓋 ComputAI 讀得到的每台電腦。")
+            .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
 @main struct T3WidgetBundle: WidgetBundle {
     var body: some Widget {
+        SpendWidget()
         FixedAccountWidget(index: 0, name: "Claude 1 · 第一個帳號")
         FixedAccountWidget(index: 1, name: "Claude 2 · 第二個帳號")
         FixedAccountWidget(index: 2, name: "Claude 3 · 第三個帳號")

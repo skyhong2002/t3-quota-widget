@@ -34,7 +34,7 @@ The installer replaces this app and its background launch agent. It does not mod
 
 ## Spend from ComputAI (optional)
 
-If [ComputAI](https://github.com/Sean-Hawks/computai) is installed at `~/.local/bin/computai`, the overview widget adds one line: today's and this month's spend at API list prices, how many machines it covers, and `+ 未計價` when some models have no price yet. Without ComputAI the line is hidden and nothing else changes.
+If [ComputAI](https://github.com/Sean-Hawks/computai) is installed at `~/.local/bin/computai`, search the widget gallery for **AI 花費** (small or medium) to add this month's and today's spend as its own tile. The overview widget also adds one line: today's and this month's spend at API list prices, how many machines it covers, and `+ 未計價` when some models have no price yet. Without ComputAI the line is hidden and nothing else changes.
 
 ComputAI runs at most every 5 minutes; the result is cached in `~/Library/Application Support/T3UsageDesktop/spend.json` and the last good value is kept when a run fails. Every Claude home configured in T3 (including proxy accounts) is passed to it, so all accounts on this Mac are counted. Other machines come from ComputAI's own `[machines]` settings, for example `usage = pull` over SSH. Only the totals reach the widget; no project names or model lists.
 
