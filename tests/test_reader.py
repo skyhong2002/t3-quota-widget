@@ -30,3 +30,21 @@ class ReaderTest(unittest.TestCase):
                 self.assertEqual(r.spend(settings, now=1100)['monthUSD'], 400.5)
                 self.assertEqual(r.spend(settings, now=2000)['monthUSD'], 400.5)
             finally: r.COMPUTAI, r.SPEND_CACHE = old
+    def test_ledger_keeps_widget_fields_and_no_projects(self):
+        state = {'time': 1791099277, 'today_usd': 10.004, 'total_cost_usd': 100.5, 'unpriced_models': [],
+                 'daily': {'days': ['2026-10-03', '2026-10-04'], 'sources': {'claude': [1, 2], 'codex': [3]}},
+                 'forecast': {'subscription_value_projected': {'claude': 10, 'codex': 20}},
+                 'sources': [{'source': 'claude', 'cost_usd': 40}],
+                 'devices': [{'name': 'mini', 'cost_usd': 5, 'stale': False}, {'name': 'mbp', 'cost_usd': 50, 'stale': False}],
+                 'machines': [{'machine': 'gpu-box', 'stale': False, 'cpu_pct': 12.4, 'gpu_util': 50.0, 'gpus': [{}], 'mem_used': 4, 'mem_total': 16, 'power_w': 99.6},
+                              {'machine': 'nas', 'stale': True, 'cpu_pct': None, 'gpu_util': 0.0, 'gpus': [], 'mem_total': 0, 'power_w': None}],
+                 'limits': [{'source': 'claude', 'name': 'week:Fable', 'used_percent': 60, 'elapsed_pct': 20, 'resets_in': 1000, 'eta_full': 400},
+                            {'source': 'codex', 'name': '5h', 'used_percent': 10, 'resets_in': 1000, 'eta_full': 5000}],
+                 'timeline': {'rows': [{'label': 'secret-project@mbp'}]}}
+        l = r.ledger(state)
+        self.assertEqual((l['yesterdayUSD'], l['projectedUSD'], l['days'][-1]), (4, 30, {'day': '10/04', 'claude': 2, 'codex': 0}))
+        self.assertEqual([d['name'] for d in l['devices']], ['mbp', 'mini'])
+        self.assertEqual(l['machines'][0], {'name': 'gpu-box', 'online': True, 'cpu': 12, 'gpu': 50, 'memory': 25, 'watts': 100})
+        self.assertEqual(l['machines'][1], {'name': 'nas', 'online': False, 'cpu': 0, 'gpu': None, 'memory': None, 'watts': None})
+        self.assertEqual((l['pace'][0]['title'], l['pace'][0]['runsOutIn'], l['pace'][1]['title'], l['pace'][1]['runsOutIn']), ('Fable 每週', 400, '5 小時', None))
+        self.assertNotIn('secret-project', json.dumps(l))

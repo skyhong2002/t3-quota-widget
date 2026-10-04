@@ -36,7 +36,16 @@ The installer replaces this app and its background launch agent. It does not mod
 
 If [ComputAI](https://github.com/Sean-Hawks/computai) is installed at `~/.local/bin/computai`, search the widget gallery for **AI 花費** (small or medium) to add this month's and today's spend as its own tile. The overview widget also adds one line: today's and this month's spend at API list prices, how many machines it covers, and `+ 未計價` when some models have no price yet. Without ComputAI the line is hidden and nothing else changes.
 
-ComputAI runs at most every 5 minutes; the result is cached in `~/Library/Application Support/T3UsageDesktop/spend.json` and the last good value is kept when a run fails. Every Claude home configured in T3 (including proxy accounts) is passed to it, so all accounts on this Mac are counted. Other machines come from ComputAI's own `[machines]` settings, for example `usage = pull` over SSH. Only the totals reach the widget; no project names or model lists.
+When the ComputAI dashboard is running (`computai --web`, on 127.0.0.1:8765), four more widgets read its `/api/state` every 30 seconds:
+
+| Widget | Sizes | Shows |
+|---|---|---|
+| 額度速度 | medium, large | each limit ComputAI reads, how much is left, and whether it runs out before it resets at the current pace |
+| 14 天花費 | medium | daily Claude and Codex spend for the last 14 days |
+| 各機器花費 | medium | this month's spend per computer |
+| 機器 | medium, large | each machine online or not, with CPU, GPU, memory and power |
+
+Only machine and device names, totals and limit percentages are published; project names and the session timeline are dropped. Without the dashboard, AI 花費 falls back to running ComputAI directly, at most every 5 minutes; the result is cached in `~/Library/Application Support/T3UsageDesktop/spend.json` and the last good value is kept when a run fails. Every Claude home configured in T3 (including proxy accounts) is passed to it, so all accounts on this Mac are counted. Other machines come from ComputAI's own `[machines]` settings, for example `usage = pull` over SSH.
 
 ## Validation
 

@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 ROOT = Path.home()
 CACHE = ROOT / '.t3/caches'
@@ -17,6 +18,8 @@ SOURCES = ('claude-nycu', 'claudeAgent', 'claude-cs14', 'codex-nycu', 'codex')
 COMPUTAI = ROOT / '.local/bin/computai'
 SPEND_CACHE = ROOT / 'Library/Application Support/T3UsageDesktop/spend.json'
 SPEND_EVERY = 300
+STATE_URL = 'http://127.0.0.1:8765/api/state'
+WINDOWS = {'5h': '5 小時', 'week': '每週'}
 
 
 def iso(value):
@@ -116,6 +119,63 @@ def spend(settings, now=None):
     return result
 
 
+def utc(epoch):
+    return dt.datetime.fromtimestamp(epoch, dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+
+def computai_state():
+    """State of the running ComputAI dashboard (computai --web), or None when it is not running."""
+    try:
+        with urllib.request.urlopen(STATE_URL, timeout=3) as response:
+            return json.load(response)
+    except (OSError, ValueError):
+        return None
+
+
+def ledger(state):
+    """Trim the dashboard state to what the widgets draw. Machine and device names only; no projects."""
+    daily = state.get('daily') or {}
+    series = daily.get('sources') or {}
+    days = []
+    for i, day in enumerate(daily.get('days', [])):
+        days.append({'day': day[5:].replace('-', '/'),
+                     'claude': round(series.get('claude', [])[i] if i < len(series.get('claude', [])) else 0, 2),
+                     'codex': round(series.get('codex', [])[i] if i < len(series.get('codex', [])) else 0, 2)})
+    days = days[-14:]
+    projected = (state.get('forecast') or {}).get('subscription_value_projected') or {}
+    machines = []
+    for m in state.get('machines', []):
+        memory = m.get('mem_total')
+        machines.append({'name': m['machine'], 'online': not m.get('stale'),
+                         'cpu': round(m.get('cpu_pct') or 0),
+                         'gpu': round(m['gpu_util']) if m.get('gpus') and m.get('gpu_util') is not None else None,
+                         'memory': round(100 * m.get('mem_used', 0) / memory) if memory else None,
+                         'watts': round(m['power_w']) if m.get('power_w') is not None else None})
+    pace = []
+    for limit in state.get('limits', []):
+        window, _, model = limit['name'].partition(':')
+        early = limit.get('eta_full') is not None and limit.get('resets_in') and limit['eta_full'] < limit['resets_in']
+        pace.append({'provider': limit['source'], 'title': ((model + ' ') if model else '') + WINDOWS.get(window, window),
+                     'percentLeft': max(0, 100 - limit['used_percent']), 'elapsedPercent': limit.get('elapsed_pct'),
+                     'resetsIn': limit.get('resets_in'), 'runsOutIn': limit['eta_full'] if early else None,
+                     'stale': bool(limit.get('stale'))})
+    return {'updatedAt': utc(state.get('time', time.time())),
+            'todayUSD': round(state.get('today_usd') or 0, 2),
+            'yesterdayUSD': round(days[-2]['claude'] + days[-2]['codex'], 2) if len(days) > 1 else None,
+            'monthUSD': round(state.get('total_cost_usd') or 0, 2),
+            'projectedUSD': round(sum(projected.values()), 2) if projected else None,
+            'sources': [{'provider': s['source'], 'usd': round(s.get('cost_usd') or 0, 2)} for s in state.get('sources', [])],
+            'devices': sorted(({'name': d['name'], 'usd': round(d.get('cost_usd') or 0, 2), 'stale': bool(d.get('stale'))}
+                               for d in state.get('devices', [])), key=lambda d: -d['usd']),
+            'machines': machines, 'days': days, 'pace': pace,
+            'unpricedModels': len(state.get('unpriced_models') or [])}
+
+
+def spend_from(ledger):
+    return {'todayUSD': ledger['todayUSD'], 'monthUSD': ledger['monthUSD'], 'devices': max(1, len(ledger['devices'])),
+            'unpricedModels': ledger['unpricedModels'], 'updatedAt': ledger['updatedAt']}
+
+
 def build_snapshot(settings):
     accounts = []
     for source in SOURCES:
@@ -126,7 +186,9 @@ def build_snapshot(settings):
             expected = config.get('displayName', source)
             provider = 'codex' if source.startswith('codex') else 'claude'
             accounts.append({'id': provider + '/t3:' + hashlib.sha256((source + ':' + expected.strip().lower()).encode()).hexdigest(), 'provider': provider, 'label': expected})
-    return {'accounts': accounts, 'spend': spend(settings), 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
+    state = computai_state()
+    details = ledger(state) if state else None
+    return {'accounts': accounts, 'spend': spend_from(details) if details else spend(settings), 'computai': details, 'entries': [], 'enabledProviders': ['claude', 'codex'], 'usageBarsShowUsed': False, 'generatedAt': dt.datetime.now(dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')}
 
 
 if __name__ == '__main__':

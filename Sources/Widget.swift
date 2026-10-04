@@ -8,8 +8,17 @@ struct Usage: Codable { var updatedAt: String; var usageRows: [Quota] }
 struct Credits: Codable { var availableCount: Int; var nextExpiresAt: String? }
 struct Account: Codable, Identifiable { var id: String; var provider: String; var label: String; var plan: String?; var resetCredits: Credits?; var usage: Usage? }
 struct Spend: Codable { var todayUSD: Double; var monthUSD: Double; var devices: Int; var unpricedModels: Int; var updatedAt: String }
-struct Snapshot: Codable { var accounts: [Account]; var spend: Spend? }
-struct Entry: TimelineEntry { let date: Date; let accounts: [Account]; var spend: Spend? = nil }
+struct Ledger: Codable {
+    struct Source: Codable { var provider: String; var usd: Double }
+    struct Device: Codable { var name: String; var usd: Double; var stale: Bool }
+    struct Machine: Codable { var name: String; var online: Bool; var cpu: Int; var gpu: Int?; var memory: Int?; var watts: Int? }
+    struct Day: Codable { var day: String; var claude: Double; var codex: Double }
+    struct Pace: Codable { var provider: String; var title: String; var percentLeft: Double; var elapsedPercent: Double?; var resetsIn: Double?; var runsOutIn: Double?; var stale: Bool }
+    var updatedAt: String; var todayUSD: Double; var yesterdayUSD: Double?; var monthUSD: Double; var projectedUSD: Double?
+    var sources: [Source]; var devices: [Device]; var machines: [Machine]; var days: [Day]; var pace: [Pace]; var unpricedModels: Int
+}
+struct Snapshot: Codable { var accounts: [Account]; var spend: Spend?; var computai: Ledger? }
+struct Entry: TimelineEntry { let date: Date; let accounts: [Account]; var spend: Spend? = nil; var ledger: Ledger? = nil }
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry { Entry(date: Date(), accounts: []) }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) { completion(read()) }
@@ -20,10 +29,18 @@ struct Provider: TimelineProvider {
         let root = Optional(URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true))
         guard let root, let data = try? Data(contentsOf: root.appendingPathComponent("accounts.json")),
               let value = try? JSONDecoder().decode(Snapshot.self, from: data) else { return Entry(date: Date(), accounts: []) }
-        return Entry(date: Date(), accounts: value.accounts, spend: value.spend)
+        return Entry(date: Date(), accounts: value.accounts, spend: value.spend, ledger: value.computai)
     }
 }
 func dollars(_ value: Double) -> String { "$" + value.formatted(.number.precision(.fractionLength(0))) }
+func shortDollars(_ value: Double) -> String { value >= 10_000 ? "$" + (value / 1000).formatted(.number.precision(.fractionLength(1))) + "k" : dollars(value) }
+func span(_ seconds: Double) -> String {
+    let minutes = max(0, Int(seconds / 60))
+    if minutes >= 1440 { return "\(minutes / 1440)天\(minutes % 1440 / 60)時" }
+    if minutes >= 60 { return "\(minutes / 60)時\(minutes % 60)分" }
+    return "\(minutes)分"
+}
+func providerColor(_ provider: String) -> Color { provider == "claude" ? .orange : .cyan }
 struct Tile: View {
     let entry: Entry
     func reset(_ raw: String?) -> String {
@@ -189,6 +206,12 @@ struct SpendTile: View {
                             Text("今日").font(.system(size: 10)).foregroundStyle(.secondary)
                             Text(dollars(spend.todayUSD)).font(.system(size: 20, weight: .semibold))
                         }
+                        if let yesterday = entry.ledger?.yesterdayUSD {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text("昨日").font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text(dollars(yesterday)).font(.system(size: 20, weight: .semibold)).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }.monospacedDigit().lineLimit(1)
                 if family == .systemSmall {
@@ -221,9 +244,18 @@ struct SpendWidget: Widget {
             .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
-@main struct T3WidgetBundle: WidgetBundle {
+struct ComputAIWidgets: WidgetBundle {
     var body: some Widget {
         SpendWidget()
+        PaceWidget()
+        TrendWidget()
+        DeviceSpendWidget()
+        MachinesWidget()
+    }
+}
+@main struct T3WidgetBundle: WidgetBundle {
+    var body: some Widget {
+        ComputAIWidgets().body
         FixedAccountWidget(index: 0, name: "Claude 1 · 第一個帳號")
         FixedAccountWidget(index: 1, name: "Claude 2 · 第二個帳號")
         FixedAccountWidget(index: 2, name: "Claude 3 · 第三個帳號")

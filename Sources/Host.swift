@@ -16,7 +16,9 @@ final class Delegate: NSObject, NSApplicationDelegate {
             try p.run(); let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
             guard p.terminationStatus == 0, let object = try JSONSerialization.jsonObject(with: data) as? [String: Any], let accounts = object["accounts"] else { return }
             var published: [String: Any] = ["accounts": accounts]
-            if let spend = object["spend"], !(spend is NSNull) { published["spend"] = spend }
+            for key in ["spend", "computai"] {
+                if let value = object[key], !(value is NSNull) { published[key] = value }
+            }
             let payload = try JSONSerialization.data(withJSONObject: published, options: [.sortedKeys])
             guard payload != previous else { return }
             guard let root = Optional(URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true)) else { print("No shared container"); fflush(stdout); return }
