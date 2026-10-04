@@ -1,56 +1,49 @@
 # T3 Quota Widget
 
-A native macOS desktop WidgetKit widget for five T3 Code subscription accounts: three Claude instances and two Codex instances. No menu bar item or separate dashboard window.
+Native macOS desktop widgets for the Claude and Codex accounts you use in T3 Code: how much of each quota is left, whether it will last until it resets, and, with [ComputAI](https://github.com/Sean-Hawks/computai), what your usage would cost at API prices and how your machines are doing. No menu bar item and no dashboard window.
 
-Displays remaining session/weekly/model quota, subscription plan, reset countdowns, and Codex reset-credit count and next expiry when provided by T3. Expired timestamps show pending update; the widget never assumes that quotas have reset. Source timestamps and stale-data labels distinguish cached data from current provider data.
+![Every widget, rendered from the widget code with synthetic accounts](docs/preview.png)
 
-## Individual account widgets
+*Rendered from the widget code with synthetic accounts and machines; not live data. Regenerate with `python3 scripts/previews.py`.*
 
-Version 1.2.1 provides five fixed-account widgets: Claude 1/2/3 and Codex 1/2. Choose the account tile directly in the widget gallery; no edit menu or App Intents metadata is required. Both medium and large sizes are supported. Mapping follows the source IDs listed below, not quota ranking. The old configurable single-account kind was removed; replace those loading tiles with the new fixed-account tiles. The original overview remains available.
+## Widgets
 
-## Preview
+| Widget | Sizes | Source | Shows |
+|---|---|---|---|
+| **Limit Pace** | medium, large | T3 Code | For every account, whether each window runs out before it resets at the current pace. Medium shows each account's most urgent window, large shows them all. |
+| **Account Quotas** | large | T3 Code | All five accounts: plan, quota left and time to reset for every window, Codex reset credits. |
+| **Claude 1–3, Codex 1–2** | medium, large | T3 Code | One account per widget, in larger type. |
+| **AI Spend** | small, medium | ComputAI | This month, today and yesterday at API list prices, across every computer ComputAI reads. |
+| **14-Day Spend** | medium | ComputAI | Daily Claude and Codex spend. |
+| **Spend by Computer** | medium | ComputAI | This month per computer. |
+| **Machines** | medium, large | ComputAI | Which machines are online, with CPU, GPU, memory and power. |
 
-![T3 quota widget preview with synthetic accounts, subscription plans and reset credits](docs/widget-preview.svg)
+Every widget names its source beside its title. When the data is more than 15 minutes old, the summary on the right turns into an orange stale warning; the widgets never assume a quota has reset.
 
-Illustrative preview with synthetic accounts and quotas; not a screenshot of live account data.
+**How Limit Pace projects.** Each window is treated as a straight line from its start: at the average rate so far, would it reach 0% before it resets? The white mark on each bar is the share of the window still to come; a bar shorter than its mark is burning faster than time. Projections start once 5% of a window has passed. Bursty use makes them rough, so read them as a warning, not a forecast.
 
-## Build and install
+## Install
 
-Requires an Apple Silicon Mac, macOS 14 or newer, Xcode and Python 3. Built locally with ad-hoc signing; no Apple developer identity is required for this tested local installation.
+Requires an Apple Silicon Mac, macOS 14 or newer, Xcode and Python 3. The app is built locally and signed ad hoc; no Apple developer account is needed.
 
 ```sh
 python3 scripts/build.py --install
 ```
 
-Then right-click the desktop → Edit Widgets → search T3 → add the large **T3 五帳號額度** widget.
+Then right-click the desktop, choose **Edit Widgets**, search for **T3** and drag in the widgets you want. Gallery names are bilingual, e.g. **額度速度 · Limit Pace**.
 
-The host reads `~/.t3/userdata/settings.json` and `~/.t3/caches/*.json` every 30 seconds. WidgetKit controls actual rendering frequency. This tool does not fetch provider quotas itself or spend reset credits; T3 Code must update its cache. The refresh schedule is not a guarantee of fresh provider data.
+The installer replaces this app and its background launch agent (`tw.skyhong.t3usage`). It does not modify T3 Code or stop other apps.
 
-Instance IDs currently supported: `claude-nycu`, `claudeAgent`, `claude-cs14`, `codex-nycu`, `codex`. Account names are read from local settings. A cache must match both the configured driver and authenticated email before displaying its quotas, plan, or reset credits.
+### Optional: ComputAI
 
-Only quota metadata is published to `/Users/Shared/T3QuotaWidget/accounts.json`, in a directory restricted to the current user (mode 0700). The sandboxed extension has read-only access to this specific directory. No credentials are copied. Do not upload local cache files, account snapshots or screenshots containing account identities.
+The spend and machine widgets need [ComputAI](https://github.com/Sean-Hawks/computai) at `~/.local/bin/computai`.
 
-The installer replaces this app and its background launch agent. It does not modify T3 Code or terminate other apps. A previously installed independent dashboard is separate and is not removed by this installer.
+- **14-Day Spend, Spend by Computer, Machines:** these read the ComputAI dashboard's `/api/state` on `127.0.0.1:8765`, so `computai --web` has to be running. Keep it running with a launch agent.
+- **AI Spend:** works without the dashboard. It runs ComputAI itself at most every 5 minutes and keeps the last good result if a run fails.
 
-## Spend from ComputAI (optional)
+Every Claude home configured in T3 (proxy accounts included) is passed to ComputAI, so all accounts on this Mac are counted. Other computers come from ComputAI's own `[machines]` settings, for example `usage = pull` over SSH.
 
-If [ComputAI](https://github.com/Sean-Hawks/computai) is installed at `~/.local/bin/computai`, search the widget gallery for **AI 花費** (small or medium) to add this month's and today's spend as its own tile. The overview widget also adds one line: today's and this month's spend at API list prices, how many machines it covers, and `+ 未計價` when some models have no price yet. Without ComputAI the line is hidden and nothing else changes.
-
-**額度速度** (medium, large) needs only T3: for all five accounts it projects each window in a straight line from the window start and shows whether it runs out before it resets. Medium shows each account's most urgent window, large shows every window.
-
-When the ComputAI dashboard is running (`computai --web`, on 127.0.0.1:8765), three more widgets read its `/api/state` every 30 seconds:
-
-| Widget | Sizes | Shows |
-|---|---|---|
-| 14 天花費 | medium | daily Claude and Codex spend for the last 14 days |
-| 各機器花費 | medium | this month's spend per computer |
-| 機器 | medium, large | each machine online or not, with CPU, GPU, memory and power |
-
-Only machine and device names, totals and limit percentages are published; project names and the session timeline are dropped. Without the dashboard, AI 花費 falls back to running ComputAI directly, at most every 5 minutes; the result is cached in `~/Library/Application Support/T3UsageDesktop/spend.json` and the last good value is kept when a run fails. Every Claude home configured in T3 (including proxy accounts) is passed to it, so all accounts on this Mac are counted. Other machines come from ComputAI's own `[machines]` settings, for example `usage = pull` over SSH.
-
-## Data sources and language
-
-Every widget names its data source next to its title: **T3 Code** for quotas and pace, **ComputAI** for spend and machines. When the data is more than 15 minutes old, the summary on the right turns into an orange stale warning. The gallery names are bilingual and each description starts with the source.
+## Language
 
 Widgets follow the macOS language: Traditional Chinese when it comes first in Language & Region, English otherwise. To pin one:
 
@@ -58,19 +51,43 @@ Widgets follow the macOS language: Traditional Chinese when it comes first in La
 defaults write tw.skyhong.t3usage language zh     # or en; delete the key to follow macOS again
 ```
 
-Dense widgets (額度速度, the overview, single accounts, machines) lay themselves out at full size first and step down evenly to 60% until they fit the space macOS gives them, so text never runs off the edge.
+The background app picks this up within 30 seconds; WidgetKit decides when the desktop redraws.
 
-The background app picks it up on its next sync (within 30 seconds); WidgetKit decides when the desktop redraws.
+## How it works
 
-## Validation
+The background app reads `~/.t3/userdata/settings.json` and `~/.t3/caches/*.json` every 30 seconds, plus ComputAI when it is available, and writes a trimmed snapshot to `/Users/Shared/T3QuotaWidget/accounts.json`. The widgets are sandboxed and can only read that one directory.
+
+T3 Code fetches the quotas; this app never calls the providers and never spends reset credits. If T3 Code stops refreshing its cache, the quota widgets keep the last values and mark them stale.
+
+Supported T3 instance IDs: `claude-nycu`, `claudeAgent`, `claude-cs14`, `codex-nycu`, `codex`. A cache is shown only when its driver and signed-in email match the T3 settings.
+
+Dense widgets lay themselves out at full size first and step down evenly to 60% until they fit the space macOS gives them, so text never runs off the edge.
+
+## Privacy
+
+- **Credentials:** none are read or copied.
+- **What the snapshot holds:** quota percentages, reset times, plan names and account labels from T3; spend totals and machine names from ComputAI.
+- **What it leaves out:** project names, session timelines and prompts.
+- **Where it lives:** in a directory only you can read (mode 0700).
+
+Don't upload local caches, snapshots or screenshots that show account emails. The previews in `docs/` use synthetic accounts.
+
+## Development
 
 ```sh
-python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests     # reader tests
+python3 scripts/previews.py               # re-render docs/preview.png and docs/previews/*.png
 ```
+
+`previews.py` compiles the widget views together with a small renderer and feeds them a synthetic snapshot. The previews therefore always match the shipping layout.
 
 ## Remove
 
-Unload `tw.skyhong.t3usage` with launchctl, remove its plist from `~/Library/LaunchAgents`, and move the app to Trash. Remove desktop widgets through Edit Widgets. Local quota data can then be removed from `/Users/Shared/T3QuotaWidget`.
+1. Unload `tw.skyhong.t3usage` with `launchctl`.
+2. Delete its plist from `~/Library/LaunchAgents`.
+3. Move **T3 帳號額度 Widget.app** to the Trash.
+4. Remove the widgets from the desktop with **Edit Widgets**.
+5. Delete `/Users/Shared/T3QuotaWidget`.
 
 ## License
 

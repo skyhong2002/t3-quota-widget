@@ -31,7 +31,7 @@ struct MachinesTile: View {
                          trailing: t("\(machines.filter(\.online).count)/\(machines.count) 在線", "\(machines.filter(\.online).count)/\(machines.count) online"),
                          updatedAt: entry.ledger?.updatedAt, date: entry.date, t: t, s: s)
             if entry.ledger == nil { NoLedger(t: t) } else {
-                Grid(alignment: .trailing, horizontalSpacing: (large ? 14 : 10) * s, verticalSpacing: (large ? 8 : 1.5) * s) {
+                Grid(alignment: .trailing, horizontalSpacing: (large ? 14 : 10) * s, verticalSpacing: (large ? 13 : 1.5) * s) {
                     GridRow {
                         Text("").gridColumnAlignment(.leading)
                         Text("CPU"); Text("GPU")
@@ -50,7 +50,7 @@ struct MachinesTile: View {
                             Text(machine.watts.map { "\($0) W" } ?? "–").foregroundStyle(machine.watts == nil ? .secondary : .primary)
                         }.opacity(machine.online ? 1 : 0.5)
                     }
-                }.font(.system(size: (large ? 14 : 10.5) * s)).monospacedDigit()
+                }.font(.system(size: (large ? 15 : 10.5) * s)).monospacedDigit()
                 Spacer(minLength: 0)
             }
         }

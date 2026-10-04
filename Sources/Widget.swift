@@ -116,7 +116,7 @@ struct Tile: View {
     func layout(_ s: CGFloat) -> some View {
         let t = entry.t
         let checked = entry.accounts.compactMap { $0.usage?.updatedAt }.min()
-        return VStack(alignment: .leading, spacing: 3 * s) {
+        return VStack(alignment: .leading, spacing: 4 * s) {
             WidgetHeader(title: t("帳號額度", "Account Quotas"), source: "T3 Code", trailing: t("剩餘 / 重置", "Left / resets in"), updatedAt: checked, date: entry.date, t: t, s: s)
             if entry.accounts.isEmpty { Text(t("請開啟 T3 帳號額度，等待資料同步。", "Open the T3 quota app and wait for the first sync.")).font(.system(size: 11 * s)) }
             ForEach(entry.accounts) { account in
@@ -126,7 +126,7 @@ struct Tile: View {
                         Text(account.label).lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 4)
                         Text(t.plan(account.plan)).font(.system(size: 10 * s, weight: .regular)).foregroundStyle(.secondary).lineLimit(1)
-                    }.font(.system(size: 11 * s, weight: .semibold))
+                    }.font(.system(size: 12 * s, weight: .semibold))
                     if let credits = account.resetCredits {
                         Text(t("重置券 \(credits.availableCount) · 到期 \(t.until(credits.nextExpiresAt, from: entry.date))",
                                "\(credits.availableCount) reset credit\(credits.availableCount == 1 ? "" : "s") · expire in \(t.until(credits.nextExpiresAt, from: entry.date))"))
@@ -144,7 +144,7 @@ struct Tile: View {
                                 }.frame(height: 4 * s)
                                 Text("\(Int(row.percentLeft))%").monospacedDigit().frame(width: 30 * s, alignment: .trailing)
                                 Text(t.until(row.window.resetsAt, from: entry.date)).lineLimit(1).foregroundStyle(.secondary).frame(width: 64 * s, alignment: .trailing)
-                            }.font(.system(size: 10 * s))
+                            }.font(.system(size: 11 * s))
                         }
                     } else { Text(t("T3 尚無額度資料", "No quota from T3 yet")).font(.system(size: 9 * s)).foregroundStyle(.secondary) }
                 }
