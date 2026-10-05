@@ -42,7 +42,9 @@ struct MachinesTile: View {
                         GridRow {
                             HStack(spacing: 5 * s) {
                                 Circle().fill(machine.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 6 * s, height: 6 * s)
-                                Text(machine.name).lineLimit(1).truncationMode(.middle)
+                                Text(machine.name)
+                                    .font(.system(size: (large ? 12 : 9) * s))
+                                    .lineLimit(1).minimumScaleFactor(0.75)
                             }.frame(maxWidth: .infinity, alignment: .leading).gridColumnAlignment(.leading)
                             Text("\(machine.cpu)%").foregroundStyle(machine.cpu >= 80 ? .orange : .primary)
                             Text(machine.gpu.map { "\($0)%" } ?? "–").foregroundStyle(machine.gpu == nil ? .secondary : .primary)
