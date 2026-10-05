@@ -43,7 +43,6 @@ struct MachinesTile: View {
                             HStack(spacing: 5 * s) {
                                 Circle().fill(machine.online ? Color.green : Color.secondary.opacity(0.4)).frame(width: 6 * s, height: 6 * s)
                                 Text(machine.name)
-                                    .font(.system(size: (large ? 12 : 9) * s))
                                     .lineLimit(1).minimumScaleFactor(0.75)
                             }.frame(maxWidth: .infinity, alignment: .leading).gridColumnAlignment(.leading)
                             Text("\(machine.cpu)%").foregroundStyle(machine.cpu >= 80 ? .orange : .primary)
@@ -52,7 +51,7 @@ struct MachinesTile: View {
                             Text(machine.watts.map { "\($0) W" } ?? "–").foregroundStyle(machine.watts == nil ? .secondary : .primary)
                         }.opacity(machine.online ? 1 : 0.5)
                     }
-                }.font(.system(size: (large ? 15 : 10.5) * s)).monospacedDigit()
+                }.font(.system(size: (large ? 14 : 10.5) * s)).monospacedDigit()
                 Spacer(minLength: 0)
             }
         }
