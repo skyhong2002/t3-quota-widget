@@ -3,6 +3,8 @@ import WidgetKit
 final class Delegate: NSObject, NSApplicationDelegate {
     var timer: Timer?
     var previous: Data?
+    var reloadedQuotas: Data?
+    var reloadedAt = Date.distantPast
     func applicationDidFinishLaunching(_ notification: Notification) {
         sync()
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.sync() }
@@ -23,11 +25,18 @@ final class Delegate: NSObject, NSApplicationDelegate {
                 if let value = object[key], !(value is NSNull) { published[key] = value }
             }
             let payload = try JSONSerialization.data(withJSONObject: published, options: [.sortedKeys])
-            guard payload != previous else { return }
-            guard let root = Optional(URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true)) else { print("No shared container"); fflush(stdout); return }
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            try payload.write(to: root.appendingPathComponent("accounts.json"), options: .atomic)
-            previous = payload
+            if payload != previous {
+                let root = URL(fileURLWithPath: "/Users/Shared/T3QuotaWidget", isDirectory: true)
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                try payload.write(to: root.appendingPathComponent("accounts.json"), options: .atomic)
+                previous = payload
+            }
+            // WidgetKit allows a background app roughly 40–70 reloads per widget per day, then stops redrawing.
+            // Machine and spend numbers change every sync, so only quota changes trigger a reload, at most every
+            // 10 minutes; the widgets' own 5-minute timeline picks up everything else.
+            let quotas = try JSONSerialization.data(withJSONObject: ["accounts": accounts, "pace": published["pace"] ?? NSNull()], options: [.sortedKeys])
+            guard quotas != reloadedQuotas, Date().timeIntervalSince(reloadedAt) >= 600 else { return }
+            reloadedQuotas = quotas; reloadedAt = Date()
             WidgetCenter.shared.reloadAllTimelines()
             print("Updated five-account widget"); fflush(stdout)
         } catch { print(error); fflush(stdout) }
