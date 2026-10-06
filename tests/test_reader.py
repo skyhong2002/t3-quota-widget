@@ -70,12 +70,23 @@ class ReaderTest(unittest.TestCase):
                 fresh = [{'usage': {'updatedAt': r.utc(10000 - 600)}}, {'label': 'no usage'}]
                 stale = fresh + [{'usage': {'updatedAt': r.utc(10000 - 601)}}]
                 self.assertFalse(r.should_nudge(fresh, now=10000))
-                self.assertFalse(r.should_nudge([{'label': 'no usage'}], now=10000))
+                self.assertTrue(r.should_nudge([{'label': 'no usage'}], now=10000), 'every T3 check failed')
                 self.assertTrue(r.should_nudge(stale, now=10000))
                 r.record_nudge(10000, 'started')
                 self.assertFalse(r.should_nudge(stale, now=10600))
                 self.assertTrue(r.should_nudge(stale, now=10601))
             finally: r.NUDGE_STATE = old
+    def test_failed_t3_check_keeps_last_good_quota(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old = r.LAST_GOOD; r.LAST_GOOD = pathlib.Path(directory)/'last-good.json'
+            try:
+                good = {'id': 'a', 'label': 'x', 'plan': 'Max', 'usage': {'updatedAt': r.utc(1000), 'usageRows': []}}
+                self.assertEqual(r.keep_last_good([good, {'id': 'b', 'label': 'y'}]), [good, {'id': 'b', 'label': 'y'}])
+                self.assertEqual(r.keep_last_good([{'id': 'a', 'label': 'x'}]), [good])
+                newer = dict(good, usage={'updatedAt': r.utc(2000), 'usageRows': []})
+                self.assertEqual(r.keep_last_good([newer]), [newer])
+                self.assertEqual(r.LAST_GOOD.stat().st_mode & 0o777, 0o600)
+            finally: r.LAST_GOOD = old
     def test_ws_call_sends_one_rpc_and_reads_its_exit(self):
         server = socket.socket(); server.bind(('127.0.0.1', 0)); server.listen(1); seen = {}
         def serve():

@@ -24,6 +24,7 @@ STATE_URL = 'http://127.0.0.1:8765/api/state'
 T3 = ROOT / '.local/bin/t3'
 T3_RUNTIME = ROOT / '.t3/userdata/server-runtime.json'
 NUDGE_STATE = ROOT / 'Library/Application Support/T3UsageDesktop/nudge.json'
+LAST_GOOD = ROOT / 'Library/Application Support/T3UsageDesktop/last-good.json'
 NUDGE_AFTER = 600   # T3 refreshes every 5 minutes; two missed rounds means it has stopped
 NUDGE_EVERY = 600
 
@@ -216,8 +217,10 @@ def should_nudge(accounts, now=None):
     """True when T3 has stopped refreshing quotas and we have not asked it to recently.
     T3 only refreshes while one of its windows reports activity, and that report can stop after sleep."""
     now = time.time() if now is None else now
-    checked = [epoch(a['usage']['updatedAt']) for a in accounts if a.get('usage')]
-    if not checked or now - min(checked) <= NUDGE_AFTER:
+    # No quota at all means every T3 check failed (or never ran); nothing else would retry, so that is stale too.
+    # A failed account keeps its last good quota, so its old updatedAt counts here.
+    checked = [epoch(a['usage']['updatedAt']) for a in accounts if a.get('usage')] or [0]
+    if now - min(checked) <= NUDGE_AFTER:
         return False
     try:
         last = json.loads(NUDGE_STATE.read_text()).get('attemptedEpoch', 0)
@@ -231,6 +234,27 @@ def record_nudge(now, result):
     with tempfile.NamedTemporaryFile('w', dir=NUDGE_STATE.parent, delete=False) as tmp:
         json.dump({'attemptedEpoch': now, 'result': result}, tmp)
     os.replace(tmp.name, NUDGE_STATE)
+
+
+def keep_last_good(accounts):
+    """When T3 reports an error for an account, show its last good quota; its old updatedAt marks it stale."""
+    try:
+        saved = json.loads(LAST_GOOD.read_text())
+    except (OSError, ValueError):
+        saved = {}
+    result = []
+    for account in accounts:
+        if account.get('usage'):
+            saved[account['id']] = account
+        elif account['id'] in saved:
+            account = saved[account['id']]
+        result.append(account)
+    LAST_GOOD.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile('w', dir=LAST_GOOD.parent, delete=False) as tmp:
+        json.dump(saved, tmp)
+    os.chmod(tmp.name, 0o600)
+    os.replace(tmp.name, LAST_GOOD)
+    return result
 
 
 def nudge(accounts, now=None):
@@ -313,6 +337,10 @@ def build_snapshot(settings):
             expected = config.get('displayName', source)
             provider = 'codex' if source.startswith('codex') else 'claude'
             accounts.append({'id': provider + '/t3:' + hashlib.sha256((source + ':' + expected.strip().lower()).encode()).hexdigest(), 'provider': provider, 'label': expected})
+    try:
+        accounts = keep_last_good(accounts)
+    except (OSError, TypeError, KeyError):
+        pass
     try:
         nudge(accounts)
     except (OSError, ValueError, KeyError, TypeError):
