@@ -185,7 +185,15 @@ struct PaceTile: View {
                             HStack(spacing: 7 * s) {
                                 Text(t.window(window.title)).frame(width: 86 * s, alignment: .leading).lineLimit(1)
                                 PaceBar(provider: account.provider, window: window).frame(height: 6 * s)
-                                Text("\(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit().frame(width: 34 * s, alignment: .trailing)
+                                Text("\(Int(window.percentLeft))%")
+                                    .fontWeight(.semibold)
+                                    .monospacedDigit()
+                                    // A systemLarge widget is narrower than the preview canvas.
+                                    // Keep 100% on one line instead of letting SwiftUI wrap the
+                                    // percent sign and make that account row taller than the rest.
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                    .frame(width: 34 * s, alignment: .trailing)
                                 PaceStatus(window: window, t: t, short: true).frame(width: 90 * s, alignment: .trailing).lineLimit(1)
                             }.font(.system(size: 12 * s))
                         }
@@ -198,7 +206,12 @@ struct PaceTile: View {
                             .lineLimit(1).truncationMode(.middle).frame(width: 80 * s, alignment: .leading)
                         Text(t.window(window.title)).font(.system(size: 10 * s)).foregroundStyle(.secondary).lineLimit(1).frame(width: 42 * s, alignment: .leading)
                         PaceBar(provider: account.provider, window: window).frame(height: 6 * s)
-                        Text("\(Int(window.percentLeft))%").fontWeight(.semibold).monospacedDigit().frame(width: 34 * s, alignment: .trailing)
+                        Text("\(Int(window.percentLeft))%")
+                            .fontWeight(.semibold)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                            .frame(width: 34 * s, alignment: .trailing)
                         PaceStatus(window: window, t: t, short: true).font(.system(size: 11 * s)).lineLimit(1).frame(width: 88 * s, alignment: .trailing)
                     }.font(.system(size: 12 * s))
                 }
