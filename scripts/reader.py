@@ -317,12 +317,43 @@ def ws_call(port, token, tag, payload, timeout=60):
                 return message['exit']['_tag']
 
 
+def t3_ports():
+    """Ports T3 may be serving on: the one in server-runtime.json first, then whatever the T3 Code app listens on.
+    The runtime file is not rewritten when the desktop app restarts its server, so it can name a dead port."""
+    ports = []
+    try:
+        ports.append(int(json.loads(T3_RUNTIME.read_text())['port']))
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        listing = subprocess.run(['/usr/sbin/lsof', '-nP', '-iTCP@127.0.0.1', '-sTCP:LISTEN', '-Fcn'],
+                                 capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        listing = ''
+    command = ''
+    for line in listing.splitlines():
+        if line.startswith('c'):
+            command = line[1:]
+        elif line.startswith('n') and command.startswith('T3') and ':' in line:
+            port = line.rsplit(':', 1)[1]
+            if port.isdigit() and int(port) not in ports:
+                ports.append(int(port))
+    return ports
+
+
 def refresh_t3():
     """Ask the running T3 server to refresh every provider, with a short-lived token revoked right after."""
-    port = json.loads(T3_RUNTIME.read_text())['port']
+    ports = t3_ports()
+    if not ports:
+        raise ConnectionRefusedError('T3 is not listening')
     issued = json.loads(t3('auth', 'session', 'issue', '--json', '--ttl', '5m', '--label', 'T3 quota widget refresh'))
     try:
-        return ws_call(port, issued['token'], 'server.refreshProviders', {})
+        for port in ports[:-1]:
+            try:
+                return ws_call(port, issued['token'], 'server.refreshProviders', {})
+            except (ConnectionError, socket.timeout):
+                continue
+        return ws_call(ports[-1], issued['token'], 'server.refreshProviders', {})
     finally:
         t3('auth', 'session', 'revoke', issued['sessionId'])
 

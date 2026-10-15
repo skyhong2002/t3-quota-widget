@@ -114,7 +114,19 @@ class ReaderTest(unittest.TestCase):
             closed = socket.socket(); closed.bind(('127.0.0.1', 0)); port = closed.getsockname()[1]; closed.close()
             (root/'runtime.json').write_text(json.dumps({'port': port}))
             r.T3, r.T3_RUNTIME = fake, root/'runtime.json'
+            lsof = r.subprocess.run
+            # Keep the test off any real T3 server on this machine.
+            r.subprocess.run = lambda args, **kw: lsof(args, **kw) if args[0] != '/usr/sbin/lsof' else r.subprocess.CompletedProcess(args, 0, '', '')
             try:
                 with self.assertRaises(OSError): r.refresh_t3()
                 self.assertEqual((root/'calls').read_text().splitlines()[-1], 'auth session revoke s1')
-            finally: r.T3, r.T3_RUNTIME = old
+            finally: r.T3, r.T3_RUNTIME = old; r.subprocess.run = lsof
+    def test_ports_fall_back_to_what_the_t3_app_listens_on(self):
+        with tempfile.TemporaryDirectory() as directory:
+            old = (r.T3_RUNTIME, r.subprocess.run)
+            r.T3_RUNTIME = pathlib.Path(directory)/'runtime.json'
+            r.T3_RUNTIME.write_text(json.dumps({'port': 60265}))
+            listing = 'p862\ncT3\\x20Cod\nn127.0.0.1:3773\np1810\ncnode\nn127.0.0.1:7676\n'
+            r.subprocess.run = lambda args, **kw: r.subprocess.CompletedProcess(args, 0, listing, '')
+            try: self.assertEqual(r.t3_ports(), [60265, 3773])
+            finally: r.T3_RUNTIME, r.subprocess.run = old
