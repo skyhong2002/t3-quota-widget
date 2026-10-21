@@ -93,6 +93,7 @@ class ReaderTest(unittest.TestCase):
             conn, _ = server.accept(); head = b''
             while b'\r\n\r\n' not in head: head += conn.recv(1)
             seen['auth'] = b'Authorization: Bearer secret-token' in head
+            seen['path'] = head.split(b' ')[1]
             conn.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
             h = conn.recv(2); n = h[1] & 127; mask = conn.recv(4); body = b''
             while len(body) < n: body += conn.recv(n - len(body))
@@ -104,6 +105,7 @@ class ReaderTest(unittest.TestCase):
         try: self.assertEqual(r.ws_call(server.getsockname()[1], 'secret-token', 'server.refreshProviders', {}), 'Success')
         finally: thread.join(); server.close()
         self.assertTrue(seen['auth'])
+        self.assertEqual(seen['path'], b'/ws?orchestrationProtocol=2')
         self.assertEqual((seen['request']['tag'], seen['request']['payload']), ('server.refreshProviders', {}))
     def test_refresh_revokes_its_token_even_when_t3_is_unreachable(self):
         with tempfile.TemporaryDirectory() as directory:

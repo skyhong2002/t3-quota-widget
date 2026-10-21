@@ -273,9 +273,10 @@ def t3(*args):
 
 def ws_call(port, token, tag, payload, timeout=60):
     """One RPC over T3's /ws endpoint, the same call its own refresh button makes. Returns the exit tag."""
+    # Newer T3 servers answer 426 unless the client names orchestration protocol 2 in the query.
     with socket.create_connection(('127.0.0.1', port), timeout=timeout) as sock:
         key = base64.b64encode(os.urandom(16)).decode()
-        sock.sendall(('GET /ws HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+        sock.sendall(('GET /ws?orchestrationProtocol=2 HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
                       'Sec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer %s\r\n\r\n'
                       % (port, key, token)).encode())
         head = b''
