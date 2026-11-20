@@ -65,8 +65,20 @@ struct Provider: TimelineProvider {
     }
 }
 func dollars(_ value: Double) -> String { "$" + value.formatted(.number.precision(.fractionLength(0))) }
-func providerColor(_ provider: String) -> Color { provider == "claude" ? .orange : .cyan }
-func providerName(_ provider: String) -> String { provider == "claude" ? "Claude" : "Codex" }
+func providerColor(_ provider: String) -> Color {
+    switch provider {
+    case "claude": .orange
+    case "agy": .blue
+    default: .cyan
+    }
+}
+func providerName(_ provider: String) -> String {
+    switch provider {
+    case "claude": "Claude"
+    case "agy": "Antigravity"
+    default: "Codex"
+    }
+}
 func isStale(_ raw: String?, at date: Date) -> Bool {
     guard let raw, let checked = ISO8601DateFormatter().date(from: raw) else { return true }
     return date.timeIntervalSince(checked) > 900
@@ -167,8 +179,8 @@ struct Tile: View {
 struct T3QuotaWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "T3FiveAccounts", provider: Provider()) { Tile(entry: $0) }
-            .configurationDisplayName("T3 五帳號額度 · Five Accounts")
-            .description("資料來源：T3 Code。三個 Claude 與兩個 Codex 帳號的剩餘額度及重置時間。")
+            .configurationDisplayName("T3 帳號額度 · Account Quotas")
+            .description("資料來源：T3 Code。Claude、Codex 與 Antigravity 帳號的剩餘額度及重置時間。")
             .supportedFamilies([.systemLarge])
     }
 }
@@ -335,6 +347,7 @@ struct ComputAIWidgets: WidgetBundle {
         FixedAccountWidget(index: 2, name: "Claude 3 · 第三個帳號")
         FixedAccountWidget(index: 3, name: "Codex 1 · 第一個帳號")
         FixedAccountWidget(index: 4, name: "Codex 2 · 第二個帳號")
+        FixedAccountWidget(index: 5, name: "Antigravity · Gemini")
         T3QuotaWidget()
     }
 }

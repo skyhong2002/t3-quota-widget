@@ -1,7 +1,30 @@
 import importlib.util, pathlib, tempfile, json, socket, threading, unittest
+from unittest.mock import patch
 spec = importlib.util.spec_from_file_location('reader', pathlib.Path(__file__).resolve().parents[1]/'scripts/reader.py')
 r = importlib.util.module_from_spec(spec); spec.loader.exec_module(r)
 class ReaderTest(unittest.TestCase):
+    def test_agy_card_only_reads_the_pinned_accounts_gemini_windows(self):
+        settings = {'usageLimitSources': {r.AGY_HUB: {'enabled': True}}}
+        email = 'pinned@example.test'
+        limits = {'checkedAt': '2026-11-21T00:00:00Z', 'windows': [
+            {'id': '3p-5h', 'usedPercent': 87},
+            {'id': 'gemini-5h', 'usedPercent': 30, 'windowDurationMins': 300,
+             'resetsAt': '2026-11-21T05:00:00.000Z'},
+            {'id': 'gemini-weekly', 'usedPercent': 12},
+            {'id': 'gemini-argon-wtu-weekly', 'usedPercent': 15},
+        ]}
+        target = {'driver': 'antigravity', 'id': f'antigravity-{email}.json', 'usageLimits': limits}
+        other = dict(target, id='antigravity-other@example.test.json')
+        with tempfile.TemporaryDirectory() as directory, patch.object(r, 'LAST_GOOD', pathlib.Path(directory)/'last-good.json'):
+            with patch.object(r, 't3_usage_sources', return_value=[{'id': r.AGY_HUB, 'accounts': [other, target]}]):
+                account = r.agy_account(settings, email)
+            self.assertEqual((account['provider'], account['label']), ('agy', email))
+            rows = account['usage']['usageRows']
+            self.assertEqual([(row['title'], row['percentLeft']) for row in rows], [('Session', 70), ('Weekly', 88)])
+            self.assertEqual(rows[0]['window']['resetsAt'], '2026-11-21T05:00:00Z')
+            with patch.object(r, 't3_usage_sources', return_value=[{'id': r.AGY_HUB, 'accounts': [dict(target, email='other@example.test')]}]):
+                self.assertNotIn('usage', r.agy_account(settings, email))
+
     def test_identity_gate_and_reset_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             old = r.CACHE; r.CACHE = pathlib.Path(directory)

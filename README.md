@@ -11,7 +11,8 @@ Native macOS desktop widgets for the Claude and Codex accounts you use in T3 Cod
 | Widget | Sizes | Source | Shows |
 |---|---|---|---|
 | **Limit Pace** | medium, large | T3 Code | For every account, whether each window runs out before it resets at the current pace. Medium shows each account's most urgent window, large shows them all. |
-| **Account Quotas** | large | T3 Code | All five accounts: plan, quota left and time to reset for every window, Codex reset credits. |
+| **Account Quotas** | large | T3 Code | All accounts: plan when reported, quota left and time to reset, plus Codex reset credits. |
+| **Antigravity · Gemini** | medium / large | T3 Code Usage Hub | Gemini 5-hour and weekly quotas for the pinned Google account. Save its email as `{"email":"user@example.com"}` in `~/Library/Application Support/T3UsageDesktop/antigravity.json`. |
 | **Claude 1–3, Codex 1–2** | medium, large | T3 Code | One account per widget, in larger type. |
 | **AI Spend** | small, medium | ComputAI | This month, today and yesterday at API list prices, across every computer ComputAI reads. |
 | **14-Day Spend** | medium | ComputAI | Daily Claude and Codex spend. |

@@ -17,6 +17,9 @@ ROOT = Path.home()
 CACHE = ROOT / '.t3/caches'
 SETTINGS = ROOT / '.t3/userdata/settings.json'
 SOURCES = ('claude-nycu', 'claudeAgent', 'claude-cs14', 'codex-nycu', 'codex')
+AGY_ACCOUNT = ROOT / 'Library/Application Support/T3UsageDesktop/antigravity.json'
+AGY_HUB = 'cliproxy-sky-mini'
+AGY_SOURCE_TTL = 240
 COMPUTAI = ROOT / '.local/bin/computai'
 SPEND_CACHE = ROOT / 'Library/Application Support/T3UsageDesktop/spend.json'
 SPEND_EVERY = 300
@@ -271,8 +274,8 @@ def t3(*args):
     return subprocess.run([str(T3), *args], capture_output=True, text=True, timeout=30, check=True).stdout
 
 
-def ws_call(port, token, tag, payload, timeout=60):
-    """One RPC over T3's /ws endpoint, the same call its own refresh button makes. Returns the exit tag."""
+def ws_call(port, token, tag, payload, timeout=60, stream_event=None):
+    """Read an RPC exit tag, or the first matching event from a stream."""
     # Newer T3 servers answer 426 unless the client names orchestration protocol 2 in the query.
     with socket.create_connection(('127.0.0.1', port), timeout=timeout) as sock:
         key = base64.b64encode(os.urandom(16)).decode()
@@ -297,10 +300,13 @@ def ws_call(port, token, tag, payload, timeout=60):
                 data += chunk
             return data
 
-        body = json.dumps({'_tag': 'Request', 'id': '1', 'tag': tag, 'payload': payload, 'headers': []}).encode()
-        mask = os.urandom(4)
-        size = bytes([0x80 | len(body)]) if len(body) < 126 else bytes([0x80 | 126]) + len(body).to_bytes(2, 'big')
-        sock.sendall(bytes([0x81]) + size + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(body)))
+        def send(message):
+            body = json.dumps(message).encode()
+            mask = os.urandom(4)
+            size = bytes([0x80 | len(body)]) if len(body) < 126 else bytes([0x80 | 126]) + len(body).to_bytes(2, 'big')
+            sock.sendall(bytes([0x81]) + size + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(body)))
+
+        send({'_tag': 'Request', 'id': '1', 'tag': tag, 'payload': payload, 'headers': []})
         while True:
             first, second = read(2)
             n = second & 127
@@ -313,9 +319,20 @@ def ws_call(port, token, tag, payload, timeout=60):
                 raise ConnectionError('T3 closed the connection')
             if first & 15 != 1:
                 continue
-            message = json.loads(data)
-            if isinstance(message, dict) and message.get('_tag') == 'Exit' and message.get('requestId') == '1':
-                return message['exit']['_tag']
+            packet = json.loads(data)
+            for message in packet if isinstance(packet, list) else [packet]:
+                if message.get('_tag') == 'Ping':
+                    send({'_tag': 'Pong'})
+                elif message.get('requestId') == '1':
+                    if message.get('_tag') == 'Exit':
+                        if stream_event:
+                            raise ConnectionError('T3 ended the usage stream')
+                        return message['exit']['_tag']
+                    if stream_event and message.get('_tag') == 'Chunk':
+                        send({'_tag': 'Ack', 'requestId': '1'})
+                        for value in message.get('values', []):
+                            if value.get('type') == stream_event:
+                                return value['payload']
 
 
 def t3_ports():
@@ -359,6 +376,72 @@ def refresh_t3():
         t3('auth', 'session', 'revoke', issued['sessionId'])
 
 
+def t3_usage_sources():
+    ports = t3_ports()
+    if not ports:
+        raise ConnectionRefusedError('T3 is not listening')
+    issued = json.loads(t3('auth', 'session', 'issue', '--json', '--ttl', '5m',
+                           '--scope', 'orchestration:read', '--label', 'T3 Widget quota read'))
+    try:
+        for port in ports[:-1]:
+            try:
+                return ws_call(port, issued['token'], 'subscribeServerConfig', {'usageLimitSources': True},
+                               timeout=4, stream_event='usageLimitSourcesUpdated')['sources']
+            except (OSError, ValueError):
+                continue
+        return ws_call(ports[-1], issued['token'], 'subscribeServerConfig', {'usageLimitSources': True},
+                       timeout=4, stream_event='usageLimitSourcesUpdated')['sources']
+    finally:
+        t3('auth', 'session', 'revoke', issued['sessionId'])
+
+
+def agy_account(settings, email, now=None):
+    expected = email.strip().lower()
+    pin = 'agy/t3:' + hashlib.sha256(expected.encode()).hexdigest()
+    result = {'id': pin, 'provider': 'agy', 'label': email}
+    if not settings.get('usageLimitSources', {}).get(AGY_HUB, {}).get('enabled'):
+        return result
+    now = time.time() if now is None else now
+    try:
+        saved = json.loads(LAST_GOOD.read_text()).get(pin)
+        if saved and now - epoch(saved['usage']['updatedAt']) < AGY_SOURCE_TTL:
+            return saved
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    try:
+        sources = t3_usage_sources()
+        matching = [a for s in sources if s['id'] == AGY_HUB for a in s['accounts']
+                    if a['driver'] == 'antigravity' and
+                    (a['email'].lower() == expected if a.get('email') else
+                     a['id'].lower() == f'antigravity-{expected}.json')]
+        if len(matching) != 1:
+            return result
+        limits = matching[0]['usageLimits']
+        if limits.get('unavailable'):
+            return result
+        reported = {window['id']: window for window in limits['windows']}
+        rows = []
+        for key, title in [('gemini-5h', 'Session'), ('gemini-weekly', 'Weekly')]:
+            if key not in reported:
+                continue
+            window = reported[key]
+            used = window.get('usedPercent')
+            if isinstance(used, bool) or not isinstance(used, (int, float)) or not 0 <= used <= 100:
+                continue
+            rate = {'usedPercent': used}
+            if window.get('resetsAt'):
+                rate['resetsAt'] = iso(window['resetsAt'])
+            if window.get('windowDurationMins'):
+                rate['windowMinutes'] = window['windowDurationMins']
+            rows.append({'id': key, 'title': title, 'percentLeft': 100 - used, 'window': rate})
+        if rows:
+            result['usage'] = {'provider': 'agy', 'updatedAt': iso(limits['checkedAt']),
+                               'dailyUsage': [], 'usageRows': rows}
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError):
+        pass
+    return result
+
+
 def build_snapshot(settings):
     accounts = []
     for source in SOURCES:
@@ -369,6 +452,12 @@ def build_snapshot(settings):
             expected = config.get('displayName', source)
             provider = 'codex' if source.startswith('codex') else 'claude'
             accounts.append({'id': provider + '/t3:' + hashlib.sha256((source + ':' + expected.strip().lower()).encode()).hexdigest(), 'provider': provider, 'label': expected})
+    try:
+        email = json.loads(AGY_ACCOUNT.read_text())['email'].strip()
+        if email:
+            accounts.append(agy_account(settings, email))
+    except (OSError, ValueError, KeyError, AttributeError, TypeError):
+        pass
     try:
         accounts = keep_last_good(accounts)
     except (OSError, TypeError, KeyError):

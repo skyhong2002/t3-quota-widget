@@ -38,12 +38,12 @@ final class Delegate: NSObject, NSApplicationDelegate {
             guard quotas != reloadedQuotas, Date().timeIntervalSince(reloadedAt) >= 600 else { return }
             reloadedQuotas = quotas; reloadedAt = Date()
             WidgetCenter.shared.reloadAllTimelines()
-            print("Updated five-account widget"); fflush(stdout)
+            print("Updated account quota widgets"); fflush(stdout)
         } catch { print(error); fflush(stdout) }
     }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         sync()
-        let alert = NSAlert(); alert.messageText = "T3 五帳號 Widget"; alert.informativeText = "在桌面按右鍵 → 編輯小工具 → 搜尋 T3，加入「T3 五帳號額度」。背景同步每 30 秒讀取 T3 Code 的既有資料。"; alert.addButton(withTitle: "好"); alert.runModal(); return true
+        let alert = NSAlert(); alert.messageText = "T3 帳號額度 Widget"; alert.informativeText = "在桌面按右鍵 → 編輯小工具 → 搜尋 T3，選擇帳號卡片或「T3 帳號額度」。背景同步每 30 秒讀取 T3 Code 的既有資料。"; alert.addButton(withTitle: "好"); alert.runModal(); return true
     }
 }
 let app = NSApplication.shared; let delegate = Delegate(); app.delegate = delegate; app.setActivationPolicy(.accessory); app.run()
