@@ -12,7 +12,9 @@ struct Ledger: Codable {
     struct Source: Codable { var provider: String; var usd: Double }
     struct Device: Codable { var name: String; var usd: Double; var stale: Bool }
     struct Machine: Codable { var name: String; var online: Bool; var cpu: Int; var gpu: Int?; var memory: Int?; var watts: Int? }
-    struct Day: Codable { var day: String; var claude: Double; var codex: Double }
+    struct Day: Codable { var day: String; var claude: Double; var codex: Double; var gemini: Double?
+        var total: Double { claude + codex + (gemini ?? 0) }
+    }
     var updatedAt: String; var todayUSD: Double; var yesterdayUSD: Double?; var monthUSD: Double; var projectedUSD: Double?
     var sources: [Source]; var devices: [Device]; var machines: [Machine]; var days: [Day]; var unpricedModels: Int
 }
@@ -326,7 +328,7 @@ struct SpendWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "T3Spend", provider: Provider()) { SpendTile(entry: $0) }
             .configurationDisplayName("AI 花費 · AI Spend")
-            .description("資料來源：ComputAI。本月、今日與昨日的 Claude、Codex 用量，以 API 價格換算，涵蓋每台電腦。")
+            .description("資料來源：ComputAI。本月、今日與昨日的 Claude、Codex、Gemini 用量，以 API 價格換算，涵蓋每台電腦。")
             .supportedFamilies([.systemSmall, .systemMedium])
     }
 }

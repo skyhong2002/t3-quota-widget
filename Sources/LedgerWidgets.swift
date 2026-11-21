@@ -95,11 +95,15 @@ struct TrendTile: View {
             let trailing = entry.ledger.map { t("今日 \(dollars($0.todayUSD))", "Today \(dollars($0.todayUSD))") } ?? ""
             WidgetHeader(title: t("14 天花費", "14-Day Spend"), source: "ComputAI", trailing: trailing, updatedAt: entry.ledger?.updatedAt, date: entry.date, t: t)
             if let days = entry.ledger?.days, !days.isEmpty {
-                let top = max(1, days.map { $0.claude + $0.codex }.max() ?? 1)
+                let top = max(1, days.map(\.total).max() ?? 1)
+                let showGemini = days.contains { ($0.gemini ?? 0) > 0 }
                 GeometryReader { g in
                     HStack(alignment: .bottom, spacing: 3) {
                         ForEach(Array(days.enumerated()), id: \.offset) { index, day in
                             VStack(spacing: 0) {
+                                if let gemini = day.gemini, gemini > 0 {
+                                    Rectangle().fill(Color.purple).frame(height: g.size.height * gemini / top)
+                                }
                                 Rectangle().fill(Color.cyan).frame(height: g.size.height * day.codex / top)
                                 Rectangle().fill(Color.orange).frame(height: g.size.height * day.claude / top)
                             }
@@ -114,10 +118,13 @@ struct TrendTile: View {
                     Spacer()
                     HStack(spacing: 3) { Circle().fill(Color.orange).frame(width: 6, height: 6); Text("Claude") }
                     HStack(spacing: 3) { Circle().fill(Color.cyan).frame(width: 6, height: 6); Text("Codex") }
+                    if showGemini {
+                        HStack(spacing: 3) { Circle().fill(Color.purple).frame(width: 6, height: 6); Text("Gemini") }
+                    }
                     Text(t("最高 \(dollars(top))", "Peak \(dollars(top))"))
                     Spacer()
                     Text(t("今日", "Today"))
-                }.font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                }.font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).minimumScaleFactor(0.8)
             } else { NoLedger(t: t) }
         }.containerBackground(.background, for: .widget)
     }

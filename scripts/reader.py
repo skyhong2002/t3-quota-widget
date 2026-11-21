@@ -146,12 +146,16 @@ def ledger(state):
     """Trim the dashboard state to what the widgets draw. Machine and device names only; no projects."""
     daily = state.get('daily') or {}
     series = daily.get('sources') or {}
-    days = []
-    for i, day in enumerate(daily.get('days', [])):
-        days.append({'day': day[5:].replace('-', '/'),
-                     'claude': round(series.get('claude', [])[i] if i < len(series.get('claude', [])) else 0, 2),
-                     'codex': round(series.get('codex', [])[i] if i < len(series.get('codex', [])) else 0, 2)})
-    days = days[-14:]
+    labels = daily.get('days', [])
+    providers = ('claude', 'codex', 'gemini')
+    def spend_on(values, index):
+        return values[index] if index < len(values) else 0
+
+    days = [{'day': labels[i][5:].replace('-', '/'),
+             **{provider: round(spend_on(series.get(provider, []), i), 2) for provider in providers}}
+            for i in range(max(0, len(labels) - 14), len(labels))]
+    yesterday = (sum(spend_on(values, len(labels) - 2) for values in series.values())
+                 if len(labels) > 1 else None)
     projected = (state.get('forecast') or {}).get('subscription_value_projected') or {}
     machines = []
     for m in state.get('machines', []):
@@ -163,7 +167,7 @@ def ledger(state):
                          'watts': round(m['power_w']) if m.get('power_w') is not None else None})
     return {'updatedAt': utc(state.get('time', time.time())),
             'todayUSD': round(state.get('today_usd') or 0, 2),
-            'yesterdayUSD': round(days[-2]['claude'] + days[-2]['codex'], 2) if len(days) > 1 else None,
+            'yesterdayUSD': round(yesterday, 2) if yesterday is not None else None,
             'monthUSD': round(state.get('total_cost_usd') or 0, 2),
             'projectedUSD': round(sum(projected.values()), 2) if projected else None,
             'sources': [{'provider': s['source'], 'usd': round(s.get('cost_usd') or 0, 2)} for s in state.get('sources', [])],

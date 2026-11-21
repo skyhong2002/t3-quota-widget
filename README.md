@@ -15,7 +15,7 @@ Native macOS desktop widgets for the Claude and Codex accounts you use in T3 Cod
 | **Antigravity · Gemini** | medium / large | T3 Code Usage Hub | Gemini 5-hour and weekly quotas for the pinned Google account. Save its email as `{"email":"user@example.com"}` in `~/Library/Application Support/T3UsageDesktop/antigravity.json`. |
 | **Claude 1–3, Codex 1–2** | medium, large | T3 Code | One account per widget, in larger type. |
 | **AI Spend** | small, medium | ComputAI | This month, today and yesterday at API list prices, across every computer ComputAI reads. |
-| **14-Day Spend** | medium | ComputAI | Daily Claude and Codex spend. |
+| **14-Day Spend** | medium | ComputAI | Daily Claude, Codex, and Gemini spend when available. |
 | **Spend by Computer** | medium | ComputAI | This month per computer. |
 | **Machines** | medium, large | ComputAI | Which machines are online, with CPU, GPU, memory and power. |
 

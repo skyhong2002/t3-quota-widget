@@ -63,11 +63,19 @@ class ReaderTest(unittest.TestCase):
                               {'machine': 'nas', 'stale': True, 'cpu_pct': None, 'gpu_util': 0.0, 'gpus': [], 'mem_total': 0, 'power_w': None}],
                  'timeline': {'rows': [{'label': 'secret-project@mbp'}]}}
         l = r.ledger(state)
-        self.assertEqual((l['yesterdayUSD'], l['projectedUSD'], l['days'][-1]), (4, 30, {'day': '10/04', 'claude': 2, 'codex': 0}))
+        self.assertEqual((l['yesterdayUSD'], l['projectedUSD'], l['days'][-1]), (4, 30, {'day': '10/04', 'claude': 2, 'codex': 0, 'gemini': 0}))
         self.assertEqual([d['name'] for d in l['devices']], ['mbp', 'mini'])
         self.assertEqual(l['machines'][0], {'name': 'gpu-box', 'online': True, 'cpu': 12, 'gpu': 50, 'memory': 25, 'watts': 100})
         self.assertEqual(l['machines'][1], {'name': 'nas', 'online': False, 'cpu': 0, 'gpu': None, 'memory': None, 'watts': None})
         self.assertNotIn('secret-project', json.dumps(l))
+    def test_ledger_includes_gemini_in_trend_and_yesterday(self):
+        state = {'daily': {'days': ['2026-11-20', '2026-11-21'],
+                           'sources': {'claude': [1, 2], 'codex': [3, 4], 'gemini': [5, 6],
+                                       'openai-api': [7, 8]}}}
+        ledger = r.ledger(state)
+        self.assertEqual(ledger['days'][-1], {'day': '11/21', 'claude': 2, 'codex': 4, 'gemini': 6})
+        self.assertEqual(ledger['yesterdayUSD'], 16)
+
     def test_pace_projects_every_account_from_window_start(self):
         def row(title, used, resets_in_minutes, minutes):
             return {'title': title, 'window': {'usedPercent': used, 'windowMinutes': minutes,
